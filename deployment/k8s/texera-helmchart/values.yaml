@@ -302,6 +302,7 @@ metrics-server:
 # Custom Ingress resource configs
 ingressPaths:
   enabled: true
+  ingressClassName: nginx  # alb for AWS
   hostname: ""
   # Optional TLS secret (manually created)
   tlsSecretName: ""  # e.g., "texera-tls"
