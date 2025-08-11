@@ -15,19 +15,16 @@
 # specific language governing permissions and limitations
 # under the License.
 
-server:
-  applicationConnectors:
-    - type: http
-      port: 9096
-  adminConnectors: []
-
-logging:
-  level: INFO
-  appenders:
-    - type: console
-      threshold: INFO
-    - type: file
-      currentLogFilename: logs/permission-service.log
-      archive: true
-      archivedLogFilenamePattern: logs/permission-service-%d.log.gz
-      archivedFileCount: 5
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-{{ .Values.accessControlService.name }}-svc
+  namespace: {{ .Release.Namespace }}
+spec:
+  type: {{ .Values.accessControlService.service.type }}
+  selector:
+    app: {{ .Release.Name }}-{{ .Values.accessControlService.name }}
+  ports:
+    - protocol: TCP
+      port: {{ .Values.accessControlService.service.port }}
+      targetPort: {{ .Values.accessControlService.service.port }}

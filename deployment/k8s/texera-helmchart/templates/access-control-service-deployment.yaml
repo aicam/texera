@@ -18,26 +18,26 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name:  {{.Release.Name}}-{{ .Values.permissionService.name }}
+  name:  {{.Release.Name}}-{{ .Values.accessControlService.name }}
   namespace: {{ .Release.Namespace }}
   labels:
-    app: {{ .Release.Name }}-{{ .Values.permissionService.name }}
+    app: {{ .Release.Name }}-{{ .Values.accessControlService.name }}
 spec:
-  replicas: {{ .Values.permissionService.numOfPods | default 1 }}
+  replicas: {{ .Values.accessControlService.numOfPods | default 1 }}
   selector:
     matchLabels:
-      app: {{ .Release.Name }}-{{ .Values.permissionService.name }}
+      app: {{ .Release.Name }}-{{ .Values.accessControlService.name }}
   template:
     metadata:
       labels:
-        app: {{ .Release.Name }}-{{ .Values.permissionService.name }}
+        app: {{ .Release.Name }}-{{ .Values.accessControlService.name }}
     spec:
       containers:
-        - name: {{ .Values.permissionService.name }}
-          image: {{ .Values.permissionService.imageName }}
+        - name: {{ .Values.accessControlService.name }}
+          image: {{ .Values.accessControlService.imageName }}
           imagePullPolicy: {{ .Values.texeraImages.pullPolicy }}
           ports:
-            - containerPort: {{ .Values.permissionService.service.port }}
+            - containerPort: {{ .Values.accessControlService.service.port }}
           env:
             - name: STORAGE_JDBC_URL
               value: jdbc:postgresql://{{ .Release.Name }}-postgresql:5432/texera_db?currentSchema=texera_db,public
@@ -49,12 +49,12 @@ spec:
           livenessProbe:
             httpGet:
               path: /api/healthcheck
-              port: {{ .Values.permissionService.service.port }}
+              port: {{ .Values.accessControlService.service.port }}
             initialDelaySeconds: 30
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /api/healthcheck
-              port: {{ .Values.permissionService.service.port }}
+              port: {{ .Values.accessControlService.service.port }}
             initialDelaySeconds: 5
             periodSeconds: 5

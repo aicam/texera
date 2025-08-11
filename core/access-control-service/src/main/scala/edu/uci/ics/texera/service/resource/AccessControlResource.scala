@@ -14,7 +14,7 @@ import scala.jdk.CollectionConverters.{CollectionHasAsScala, MapHasAsScala}
 
 @Produces(Array(MediaType.APPLICATION_JSON))
 @Path("/authorize")
-class PermissionResource extends LazyLogging {
+class AccessControlResource extends LazyLogging {
 
   private val computingUnit: ComputingUnit = new ComputingUnit()
 

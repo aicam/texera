@@ -68,8 +68,8 @@ data:
                           "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
                           http_service:
                             server_uri:
-                              uri: http://{{ .Values.permissionService.name }}-svc.{{ .Release.Namespace }}.svc.cluster.local
-                              cluster: permission_service_cluster
+                              uri: http://{{ .Release.Name }}-{{ .Values.accessControlService.name }}-svc.{{ .Release.Namespace }}.svc.cluster.local
+                              cluster: access_control_service_cluster
                               timeout: 5s
                             path_prefix: /api/authorize
                             authorization_request:
@@ -128,16 +128,16 @@ data:
                 name: dynamic_dns_cache
                 dns_lookup_family: V4_ONLY
                 dns_refresh_rate: 1s
-        - name: permission_service_cluster
+        - name: access_control_service_cluster
           connect_timeout: 0.25s
-          type: strict_dns
+          type: LOGICAL_DNS
           lb_policy: round_robin
           load_assignment:
-            cluster_name: permission_service_cluster
+            cluster_name: access_control_service_cluster
             endpoints:
               - lb_endpoints:
                   - endpoint:
                       address:
                         socket_address:
-                          address: {{ .Values.permissionService.name }}-svc.{{ .Release.Namespace }}.svc.cluster.local
-                          port_value: {{ .Values.permissionService.service.port }}
+                          address: {{ .Release.Name }}-{{ .Values.accessControlService.name }}-svc.{{ .Release.Namespace }}.svc.cluster.local.
+                          port_value: {{ .Values.accessControlService.service.port }}

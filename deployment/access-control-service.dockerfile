@@ -37,7 +37,7 @@ COPY .git ../.git
 RUN sbt clean PermissionService/dist
 
 # Unzip the texera binary
-RUN unzip  permission-service/target/universal/permission-service-*.zip -d target/
+RUN unzip  access-control-service/target/universal/access-control-service-*.zip -d target/
 
 FROM eclipse-temurin:11-jre-jammy AS runtime
 
@@ -45,10 +45,10 @@ WORKDIR /core
 
 COPY --from=build /.git /.git
 # Copy the built texera binary from the build phase
-COPY --from=build /core/target/permission-service-* /core/
+COPY --from=build /core/target/access-control-service* /core/
 # Copy resources directories under /core from build phase
-COPY --from=build /core/permission-service/src/main/resources /core/permission-service/src/main/resources
+COPY --from=build /core/access-control-service/src/main/resources /core/access-control-service/src/main/resources
 
-CMD ["bin/permission-service"]
+CMD ["bin/access-control-service"]
 
 EXPOSE 9096

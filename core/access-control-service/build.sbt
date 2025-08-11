@@ -17,7 +17,7 @@
 
 import scala.collection.Seq
 
-name := "permission-service"
+name := "access-control-service"
 organization := "edu.uci.ics"
 version := "1.0.0"
 

@@ -27,7 +27,7 @@ lazy val ConfigService = (project in file("config-service"))
       "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.17.0"
     )
   )
-lazy val PermissionService = (project in file("permission-service"))
+lazy val PermissionService = (project in file("access-control-service"))
   .dependsOn(Auth, Config)
   .settings(
     dependencyOverrides ++= Seq(

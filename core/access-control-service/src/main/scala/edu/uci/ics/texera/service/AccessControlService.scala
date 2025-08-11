@@ -5,17 +5,17 @@ import io.dropwizard.core.setup.{Bootstrap, Environment}
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import com.typesafe.scalalogging.LazyLogging
 import edu.uci.ics.amber.config.StorageConfig
-import edu.uci.ics.amber.util.PathUtils.{configServicePath, permissionServicePath}
+import edu.uci.ics.amber.util.PathUtils.{configServicePath, accessControlServicePath}
 import edu.uci.ics.texera.auth.{JwtAuthFilter, SessionUser}
 import edu.uci.ics.texera.dao.SqlServer
-import edu.uci.ics.texera.service.resource.{HealthCheckResource, PermissionResource}
+import edu.uci.ics.texera.service.resource.{HealthCheckResource, AccessControlResource}
 import io.dropwizard.auth.AuthDynamicFeature
 import org.eclipse.jetty.server.session.SessionHandler
 import org.jooq.impl.DSL
 
 
-class PermissionService extends Application[PermissionServiceConfiguration] with LazyLogging {
-  override def initialize(bootstrap: Bootstrap[PermissionServiceConfiguration]): Unit = {
+class AccessControlService extends Application[AccessControlServiceConfiguration] with LazyLogging {
+  override def initialize(bootstrap: Bootstrap[AccessControlServiceConfiguration]): Unit = {
     // Register Scala module to Dropwizard default object mapper
     bootstrap.getObjectMapper.registerModule(DefaultScalaModule)
 
@@ -26,7 +26,7 @@ class PermissionService extends Application[PermissionServiceConfiguration] with
     )
   }
 
-  override def run(configuration: PermissionServiceConfiguration, environment: Environment): Unit = {
+  override def run(configuration: AccessControlServiceConfiguration, environment: Environment): Unit = {
     // Serve backend at /api
     environment.jersey.setUrlPattern("/api/*")
 
@@ -34,7 +34,7 @@ class PermissionService extends Application[PermissionServiceConfiguration] with
     environment.servlets.setSessionHandler(new SessionHandler)
 
     environment.jersey.register(classOf[HealthCheckResource])
-    environment.jersey.register(classOf[PermissionResource])
+    environment.jersey.register(classOf[AccessControlResource])
 
     // Register JWT authentication filter
     environment.jersey.register(new AuthDynamicFeature(classOf[JwtAuthFilter]))
@@ -45,17 +45,17 @@ class PermissionService extends Application[PermissionServiceConfiguration] with
     )
   }
 }
-object PermissionService {
+object AccessControlService {
   def main(args: Array[String]): Unit = {
-    val permissionPath = permissionServicePath
+    val accessControlPath = accessControlServicePath
       .resolve("src")
       .resolve("main")
       .resolve("resources")
-      .resolve("permission-service-web-config.yaml")
+      .resolve("access-control-service-web-config.yaml")
       .toAbsolutePath
       .toString
 
     // Start the Dropwizard application
-    new PermissionService().run("server", permissionPath)
+    new AccessControlService().run("server", accessControlPath)
   }
 }
