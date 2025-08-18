@@ -71,7 +71,7 @@ data:
                               uri: http://{{ .Release.Name }}-{{ .Values.accessControlService.name }}-svc.{{ .Release.Namespace }}.svc.cluster.local
                               cluster: access_control_service_cluster
                               timeout: 5s
-                            path_prefix: /api/authorize
+                            path_prefix: /api/auth
                             authorization_request:
                               allowed_headers:
                                 patterns:

@@ -3,9 +3,9 @@ package edu.uci.ics.texera.service.resource
 import com.typesafe.scalalogging.LazyLogging
 import edu.uci.ics.texera.auth.JwtParser.parseToken
 import edu.uci.ics.texera.auth.SessionUser
+import edu.uci.ics.texera.auth.util.ComputingUnitAccess
 import edu.uci.ics.texera.dao.SqlServer
 import edu.uci.ics.texera.dao.jooq.generated.enums.PrivilegeEnum
-import edu.uci.ics.texera.service.util.ComputingUnit
 import jakarta.ws.rs.{GET, POST, Path, PathParam, Produces}
 import jakarta.ws.rs.core.{Context, HttpHeaders, MediaType, Response, UriInfo}
 
@@ -13,10 +13,10 @@ import java.util.Optional
 import scala.jdk.CollectionConverters.{CollectionHasAsScala, MapHasAsScala}
 
 @Produces(Array(MediaType.APPLICATION_JSON))
-@Path("/authorize")
+@Path("/auth")
 class AccessControlResource extends LazyLogging {
 
-  private val computingUnit: ComputingUnit = new ComputingUnit()
+  private val computingUnitAccess: ComputingUnitAccess = new ComputingUnitAccess()
 
   private def performAuth(
       uriInfo: UriInfo,
@@ -56,7 +56,7 @@ class AccessControlResource extends LazyLogging {
         return Response.status(Response.Status.FORBIDDEN).build()
 
       val uid = userSession.get().getUid
-      cuAccess = computingUnit.getComputingUnitAccess(cuidInt, uid)
+      cuAccess = computingUnitAccess.getComputingUnitAccess(cuidInt, uid)
       if (cuAccess == PrivilegeEnum.NONE)
         return Response.status(Response.Status.FORBIDDEN).build()
     } catch {

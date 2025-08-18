@@ -1,21 +1,21 @@
-package edu.uci.ics.texera.service.util
+package edu.uci.ics.texera.auth.util
 
 import edu.uci.ics.texera.dao.SqlServer
 import edu.uci.ics.texera.dao.jooq.generated.enums.PrivilegeEnum
 import edu.uci.ics.texera.dao.jooq.generated.tables.daos.{ComputingUnitUserAccessDao, WorkflowComputingUnitDao}
-import edu.uci.ics.texera.service.util.ComputingUnit._
+import ComputingUnitAccess._
 import org.jooq.DSLContext
 
 import scala.jdk.CollectionConverters._
 
 
-object ComputingUnit {
+object ComputingUnitAccess {
   private lazy val context: DSLContext = SqlServer
     .getInstance()
     .createDSLContext()
 }
 
-class ComputingUnit {
+class ComputingUnitAccess {
 
   def getComputingUnitAccess(cuid: Integer, uid: Integer): PrivilegeEnum = {
     val workflowComputingUnitDao = new WorkflowComputingUnitDao(context.configuration())
