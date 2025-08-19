@@ -34,7 +34,7 @@ WORKDIR /core
 # Add .git for runtime calls to jgit from OPversion
 COPY .git ../.git
 
-RUN sbt clean PermissionService/dist
+RUN sbt clean AccessControlService/dist
 
 # Unzip the texera binary
 RUN unzip  access-control-service/target/universal/access-control-service-*.zip -d target/
