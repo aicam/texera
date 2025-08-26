@@ -20,7 +20,7 @@ package edu.uci.ics.texera.service.resource
 import com.typesafe.scalalogging.LazyLogging
 import edu.uci.ics.texera.auth.JwtParser.parseToken
 import edu.uci.ics.texera.auth.SessionUser
-import edu.uci.ics.texera.auth.util.ComputingUnitAccess
+import edu.uci.ics.texera.auth.util.{ComputingUnitAccess, HeaderField}
 import edu.uci.ics.texera.dao.SqlServer
 import edu.uci.ics.texera.dao.jooq.generated.enums.PrivilegeEnum
 import jakarta.ws.rs.{GET, POST, Path, PathParam, Produces}
@@ -83,10 +83,10 @@ class AccessControlResource extends LazyLogging {
 
     Response
       .ok()
-      .header("x-user-cu-access", cuAccess.toString)
-      .header("x-user-id", userSession.get().getUid.toString)
-      .header("x-user-name", userSession.get().getName)
-      .header("x-user-email", userSession.get().getEmail)
+      .header(HeaderField.UserComputingUnitAccess, cuAccess.toString)
+      .header(HeaderField.UserId, userSession.get().getUid.toString)
+      .header(HeaderField.UserName, userSession.get().getName)
+      .header(HeaderField.UserEmail, userSession.get().getEmail)
       .build()
   }
 

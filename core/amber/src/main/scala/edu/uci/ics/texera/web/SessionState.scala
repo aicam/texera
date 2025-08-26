@@ -54,7 +54,7 @@ class SessionState(session: Session) {
   private var currentWorkflowState: Option[WorkflowService] = None
   private var workflowSubscription = Disposable.empty()
   private var executionSubscription = Disposable.empty()
-  private var userCUAccess: PrivilegeEnum = PrivilegeEnum.NONE
+  private var userComputingUnitAccess: PrivilegeEnum = PrivilegeEnum.NONE
 
   def send(msg: TexeraWebSocketEvent): Unit = {
     session.getAsyncRemote.sendText(objectMapper.writeValueAsString(msg))
@@ -83,8 +83,8 @@ class SessionState(session: Session) {
 
   }
 
-  def setUserCUAccess(cuAccess: PrivilegeEnum): Unit = {
-    this.userCUAccess = cuAccess
+  def setUserComputingUnitAccess(cuAccess: PrivilegeEnum): Unit = {
+    this.userComputingUnitAccess = cuAccess
   }
-  def getUserCUAccess: PrivilegeEnum = this.userCUAccess
+  def getUserComputingUnitAccess: PrivilegeEnum = this.userComputingUnitAccess
 }

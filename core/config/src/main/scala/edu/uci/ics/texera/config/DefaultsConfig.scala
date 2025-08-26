@@ -19,7 +19,6 @@
 package edu.uci.ics.texera.config
 
 import com.typesafe.config.{ConfigFactory, ConfigRenderOptions, ConfigValueType}
-
 import scala.jdk.CollectionConverters.CollectionHasAsScala
 
 object DefaultsConfig {

@@ -27,6 +27,7 @@ import edu.uci.ics.amber.error.ErrorUtils.getStackTraceWithAllCauses
 import edu.uci.ics.amber.core.virtualidentity.WorkflowIdentity
 import edu.uci.ics.amber.core.workflowruntimestate.FatalErrorType.COMPILATION_ERROR
 import edu.uci.ics.amber.core.workflowruntimestate.WorkflowFatalError
+import edu.uci.ics.texera.auth.util.HeaderField
 import edu.uci.ics.texera.config.KubernetesConfig
 import edu.uci.ics.texera.dao.jooq.generated.enums.PrivilegeEnum
 import edu.uci.ics.texera.dao.jooq.generated.tables.pojos.User
@@ -55,9 +56,9 @@ class WorkflowWebsocketResource extends LazyLogging {
     val cuid = session.getRequestParameterMap.get("cuid").get(0).toInt
     var cuAccessEnum: PrivilegeEnum = null
     if (KubernetesConfig.kubernetesComputingUnitEnabled) {
-      cuAccessEnum = PrivilegeEnum.valueOf(session.getUserProperties.get("cuAccess").asInstanceOf[String])
+      cuAccessEnum = PrivilegeEnum.valueOf(session.getUserProperties.get(HeaderField.UserComputingUnitAccess).asInstanceOf[String])
     }
-    sessionState.setUserCUAccess(cuAccessEnum)
+    sessionState.setUserComputingUnitAccess(cuAccessEnum)
     logger.info(s"Websocket connection opened for workflow $wid with computing unit $cuid and access $cuAccessEnum")
     // hack to refresh frontend run button state
     sessionState.send(WorkflowStateEvent("Uninitialized"))
@@ -101,7 +102,7 @@ class WorkflowWebsocketResource extends LazyLogging {
             sessionState.send(modifyLogicResponse)
           }
         case workflowExecuteRequest: WorkflowExecuteRequest =>
-          if (KubernetesConfig.kubernetesComputingUnitEnabled && sessionState.getUserCUAccess != PrivilegeEnum.WRITE) {
+          if (KubernetesConfig.kubernetesComputingUnitEnabled && sessionState.getUserComputingUnitAccess != PrivilegeEnum.WRITE) {
             throw new IllegalStateException("User does not have write access to the computing unit")
           }
           workflowStateOpt match {
