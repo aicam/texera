@@ -24,8 +24,9 @@ import com.kjetland.jackson.jsonSchema.annotations.JsonSchemaTitle
 import org.apache.texera.amber.core.tuple.{AttributeType, Schema}
 import org.apache.texera.amber.core.workflow.{InputPort, OutputPort, PortIdentity}
 import org.apache.texera.amber.operator.PythonOperatorDescriptor
-import org.apache.texera.amber.operator.metadata.annotations.AutofillAttributeName
+import org.apache.texera.amber.operator.metadata.annotations.{AutofillAttributeName, HideAnnotation}
 import org.apache.texera.amber.operator.metadata.{OperatorGroupConstants, OperatorInfo}
+import com.kjetland.jackson.jsonSchema.annotations.{JsonSchemaInject, JsonSchemaString}
 
 class SklearnLinearRegressionOpDesc extends PythonOperatorDescriptor {
 
@@ -40,6 +41,22 @@ class SklearnLinearRegressionOpDesc extends PythonOperatorDescriptor {
   @JsonProperty(required = true)
   val degree: Int = 1
 
+  @JsonSchemaTitle("MLflow Tracking")
+  @JsonPropertyDescription("Enable MLflow tracking for this model.")
+  @JsonProperty(defaultValue = "false")
+  var mlflowTracking: Boolean = false
+
+  @JsonSchemaTitle("Model Control")
+  @JsonPropertyDescription("Download or upload model weights.")
+  @JsonSchemaInject(
+    strings = Array(
+      new JsonSchemaString(path = HideAnnotation.hideTarget, value = "mlflowTracking"),
+      new JsonSchemaString(path = HideAnnotation.hideType, value = HideAnnotation.Type.equals),
+      new JsonSchemaString(path = HideAnnotation.hideExpectedValue, value = "false")
+    )
+  )
+  var modelControl: String = _
+
   override def generatePythonCode(): String =
     s"""
        |from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, mean_absolute_error, r2_score
@@ -48,6 +65,7 @@ class SklearnLinearRegressionOpDesc extends PythonOperatorDescriptor {
        |from sklearn.preprocessing import PolynomialFeatures
        |import numpy as np
        |from pytexera import *
+       |${if (mlflowTracking) "import mlflow\nimport mlflow.sklearn" else ""}
        |class ProcessTableOperator(UDFTableOperator):
        |    @overrides
        |    def process_table(self, table: Table, port: int) -> Iterator[Optional[TableLike]]:
@@ -64,6 +82,13 @@ class SklearnLinearRegressionOpDesc extends PythonOperatorDescriptor {
        |            mae = round(mean_absolute_error(Y, predictions), 4)
        |            r2 = round(r2_score(Y, predictions), 4)
        |            print("MAE:", mae, ", R2:", r2)
+       |            ${if (mlflowTracking)
+      s"""
+            with mlflow.start_run(run_name="LinearRegression"):
+                mlflow.set_tag("operator_id", "${operatorIdentifier.id}")
+                mlflow.sklearn.log_model(self.model, "model")
+               """
+    else ""}
        |            yield {"model_name" : "LinearRegression", "model" : self.model}""".stripMargin
 
   override def operatorInfo: OperatorInfo =

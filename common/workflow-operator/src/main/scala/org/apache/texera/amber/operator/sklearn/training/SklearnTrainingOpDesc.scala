@@ -79,6 +79,22 @@ class SklearnTrainingOpDesc extends PythonOperatorDescriptor {
   )
   var tfidfTransformer: Boolean = false
 
+  @JsonSchemaTitle("MLflow Tracking")
+  @JsonPropertyDescription("Enable MLflow tracking for this model.")
+  @JsonProperty(defaultValue = "false")
+  var mlflowTracking: Boolean = false
+
+  @JsonSchemaTitle("Model Control")
+  @JsonPropertyDescription("Download or upload model weights.")
+  @JsonSchemaInject(
+    strings = Array(
+      new JsonSchemaString(path = HideAnnotation.hideTarget, value = "mlflowTracking"),
+      new JsonSchemaString(path = HideAnnotation.hideType, value = HideAnnotation.Type.equals),
+      new JsonSchemaString(path = HideAnnotation.hideExpectedValue, value = "false")
+    )
+  )
+  var modelControl: String = _
+
   @JsonIgnore
   def getImportStatements = "from sklearn.ensemble import RandomForestClassifier"
 
@@ -91,6 +107,7 @@ class SklearnTrainingOpDesc extends PythonOperatorDescriptor {
        |from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
        |import numpy as np
        |from pytexera import *
+       |${if (mlflowTracking) "import mlflow\nimport mlflow.sklearn" else ""}
        |class ProcessTableOperator(UDFTableOperator):
        |    @overrides
        |    def process_table(self, table: Table, port: int) -> Iterator[Optional[TableLike]]:
@@ -101,6 +118,10 @@ class SklearnTrainingOpDesc extends PythonOperatorDescriptor {
       tfidfTransformer
     ) "TfidfTransformer(),"
     else ""} ${getImportStatements.split(" ").last}()).fit(X, Y)
+       |        if ${mlflowTracking}:
+       |            with mlflow.start_run(run_name="${getUserFriendlyModelName}"):
+       |                mlflow.set_tag("operator_id", "${operatorIdentifier.id}")
+       |                mlflow.sklearn.log_model(model, "model")
        |        yield {"model_name" : "$getUserFriendlyModelName", "model" : model}
        |
        |        """.stripMargin

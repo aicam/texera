@@ -67,6 +67,22 @@ abstract class SklearnClassifierOpDesc extends PythonOperatorDescriptor {
   )
   var text: String = _
 
+  @JsonSchemaTitle("MLflow Tracking")
+  @JsonPropertyDescription("Enable MLflow tracking for this model.")
+  @JsonProperty(defaultValue = "false")
+  var mlflowTracking: Boolean = false
+
+  @JsonSchemaTitle("Model Control")
+  @JsonPropertyDescription("Download or upload model weights.")
+  @JsonSchemaInject(
+    strings = Array(
+      new JsonSchemaString(path = HideAnnotation.hideTarget, value = "mlflowTracking"),
+      new JsonSchemaString(path = HideAnnotation.hideType, value = HideAnnotation.Type.equals),
+      new JsonSchemaString(path = HideAnnotation.hideExpectedValue, value = "false")
+    )
+  )
+  var modelControl: String = _
+
   @JsonSchemaTitle("Tfidf Transformer")
   @JsonPropertyDescription("Transform a count matrix to a normalized tf or tf-idf representation.")
   @JsonProperty(defaultValue = "false")
@@ -83,34 +99,41 @@ abstract class SklearnClassifierOpDesc extends PythonOperatorDescriptor {
   def getImportStatements = ""
 
   @JsonIgnore
-  def getUserFriendlyModelName = ""
+  def getUserFriendlyModelName = "Classifier"
 
   override def generatePythonCode(): String =
     s"""$getImportStatements
-       |from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
        |from sklearn.pipeline import make_pipeline
        |from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
+       |from sklearn.metrics import f1_score, precision_score, recall_score
        |import numpy as np
        |from pytexera import *
+       |${if (mlflowTracking) "import mlflow\nimport mlflow.sklearn" else ""}
        |class ProcessTableOperator(UDFTableOperator):
        |    @overrides
        |    def process_table(self, table: Table, port: int) -> Iterator[Optional[TableLike]]:
        |        Y = table["$target"]
        |        X = table.drop("$target", axis=1)
-       |        X = ${if (countVectorizer) "X['" + text + "']" else "X"}
        |        if port == 0:
-       |            self.model = make_pipeline(${if (countVectorizer) "CountVectorizer(),"
-    else ""} ${if (tfidfTransformer) "TfidfTransformer()," else ""} ${getImportStatements
-      .split(" ")
-      .last}()).fit(X, Y)
+       |            X_input = ${if (countVectorizer) "X['" + text + "']" else "X"}
+       |            model = make_pipeline(${if (countVectorizer) "CountVectorizer()," else ""} ${if (
+      tfidfTransformer
+    ) "TfidfTransformer(),"
+    else ""} ${getImportStatements.split(" ").last}()).fit(X_input, Y)
+       |            self.model = model
        |        else:
-       |            predictions = self.model.predict(X)
-       |            print("Overall Accuracy:", round(accuracy_score(Y, predictions), 4))
+       |            X_input = ${if (countVectorizer) "X['" + text + "']" else "X"}
+       |            predictions = self.model.predict(X_input)
        |            f1s = f1_score(Y, predictions, average=None)
        |            precisions = precision_score(Y, predictions, average=None)
        |            recalls = recall_score(Y, predictions, average=None)
        |            for i, class_name in enumerate(np.unique(Y)):
        |                print("Class", repr(class_name), " - F1:", round(f1s[i], 4), ", Precision:", round(precisions[i], 4), ", Recall:", round(recalls[i], 4))
+       |            ${if (mlflowTracking)
+      s"""with mlflow.start_run(run_name="${getUserFriendlyModelName}"):
+         |                mlflow.set_tag("operator_id", "${operatorIdentifier.id}")
+         |                mlflow.sklearn.log_model(self.model, "model")"""
+    else ""}
        |            yield {"model_name" : "$getUserFriendlyModelName", "model" : self.model}""".stripMargin
 
   override def operatorInfo: OperatorInfo =
