@@ -39,6 +39,7 @@ import org.apache.texera.web.resource.dashboard.admin.execution.AdminExecutionRe
 import org.apache.texera.web.resource.dashboard.admin.settings.AdminSettingsResource
 import org.apache.texera.web.resource.dashboard.admin.user.AdminUserResource
 import org.apache.texera.web.resource.dashboard.hub.HubResource
+import org.apache.texera.web.resource.dashboard.user.UserResource
 import org.apache.texera.web.resource.dashboard.user.project.{
   ProjectAccessResource,
   ProjectResource,
@@ -141,6 +142,7 @@ class TexeraWebApplication
     environment.jersey.register(classOf[WorkflowAccessResource])
     environment.jersey.register(classOf[WorkflowResource])
     environment.jersey.register(classOf[HubResource])
+    environment.jersey.register(classOf[UserResource])
     environment.jersey.register(classOf[WorkflowVersionResource])
     environment.jersey.register(classOf[ProjectResource])
     environment.jersey.register(classOf[ProjectAccessResource])
