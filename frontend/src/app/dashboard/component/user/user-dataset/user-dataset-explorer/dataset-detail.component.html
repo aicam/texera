@@ -19,7 +19,7 @@
 
 <div *ngIf="!isMaximized">
   <nz-card>
-    <h2 class="dataset-title">Dataset: {{datasetName}}</h2>
+    <h2 class="dataset-title">{{ entityLabel }}: {{datasetName}}</h2>
     <nz-card-meta
       style="padding-top: 10px"
       [nzDescription]="descriptionTemplate">
@@ -227,7 +227,7 @@
               </nz-select>
               <button
                 nz-button
-                nz-tooltip="Download Dataset"
+                nz-tooltip="Download {{ entityLabel }}"
                 (click)="onClickDownloadVersionAsZip()"
                 *ngIf="selectedVersion"
                 [disabled]="!isLogin || !isDownloadAllowed()"

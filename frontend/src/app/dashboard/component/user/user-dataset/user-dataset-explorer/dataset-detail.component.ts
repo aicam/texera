@@ -112,6 +112,13 @@ export class DatasetDetailComponent implements OnInit {
 
   @Output() userMakeChanges = new EventEmitter<void>();
 
+  /** When true, UI is rebranded as "ML Model" (from route data). */
+  public isMlModel = false;
+
+  get entityLabel(): string {
+    return this.isMlModel ? "ML Model" : "Dataset";
+  }
+
   constructor(
     private route: ActivatedRoute,
     private modalService: NzModalService,
@@ -144,6 +151,7 @@ export class DatasetDetailComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    this.isMlModel = this.route.snapshot.data["isMlModel"] === true;
     this.route.params
       .pipe(
         switchMap(params => {
@@ -235,10 +243,10 @@ export class DatasetDetailComponent implements OnInit {
             if (!this.datasetIsPublic) {
               state = "private";
             }
-            this.notificationService.success(`Dataset ${this.datasetName} is now ${state}`);
+            this.notificationService.success(`${this.entityLabel} ${this.datasetName} is now ${state}`);
           },
           error: (err: unknown) => {
-            this.notificationService.error("Fail to change the dataset publicity");
+            this.notificationService.error(`Fail to change the ${this.entityLabel.toLowerCase()} publicity`);
           },
         });
     }
@@ -257,10 +265,10 @@ export class DatasetDetailComponent implements OnInit {
             if (!this.datasetIsDownloadable) {
               state = "not allowed";
             }
-            this.notificationService.success(`Dataset downloads are now ${state}`);
+            this.notificationService.success(`${this.entityLabel} downloads are now ${state}`);
           },
           error: (err: unknown) => {
-            this.notificationService.error("Failed to change the dataset download permission");
+            this.notificationService.error(`Failed to change the ${this.entityLabel.toLowerCase()} download permission`);
           },
         });
     }

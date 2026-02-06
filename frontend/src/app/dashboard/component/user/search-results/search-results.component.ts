@@ -40,6 +40,8 @@ export class SearchResultsComponent {
   @Input() editable = false;
   @Input() searchKeywords: string[] = [];
   @Input() currentUid: number | undefined;
+  /** When set, dataset entries link to this path + /:id (e.g. for ML Models section). */
+  @Input() datasetDetailBasePath: string | undefined;
   @Output() deleted = new EventEmitter<DashboardEntry>();
   @Output() duplicated = new EventEmitter<DashboardEntry>();
   @Output() modified = new EventEmitter<DashboardEntry>();

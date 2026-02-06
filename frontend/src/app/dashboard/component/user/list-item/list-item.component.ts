@@ -76,6 +76,8 @@ export class ListItemComponent implements OnChanges {
   isLiked: boolean = false;
   @Input() isPrivateSearch = false;
   @Input() editable = false;
+  /** When set, dataset entries use this path for the detail link (e.g. /dashboard/user/ml-model). */
+  @Input() datasetDetailBasePath: string | undefined;
   private _entry?: DashboardEntry;
   hovering: boolean = false;
 
@@ -127,8 +129,9 @@ export class ListItemComponent implements OnChanges {
       if (typeof this.entry.id === "number") {
         this.disableDelete = !this.entry.dataset.isOwner;
         this.owners = this.entry.accessibleUserIds;
+        const datasetBasePath = this.datasetDetailBasePath ?? DASHBOARD_USER_DATASET;
         if (this.currentUid !== undefined && this.owners.includes(this.currentUid)) {
-          this.entryLink = [DASHBOARD_USER_DATASET, String(this.entry.id)];
+          this.entryLink = [datasetBasePath, String(this.entry.id)];
         } else {
           this.entryLink = [DASHBOARD_HUB_DATASET_RESULT_DETAIL, String(this.entry.id)];
         }
@@ -147,7 +150,7 @@ export class ListItemComponent implements OnChanges {
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes["entry"]) {
+    if (changes["entry"] || changes["datasetDetailBasePath"]) {
       this.initializeEntry();
     }
   }

@@ -98,6 +98,18 @@
             <span>Datasets</span>
           </li>
           <li
+            *ngIf="sidebarTabs.datasets_enabled"
+            nz-menu-item
+            nz-tooltip="Look up for ML models"
+            nzMatchRouter="true"
+            nzTooltipPlacement="right"
+            [routerLink]="DASHBOARD_USER_ML_MODEL">
+            <span
+              nz-icon
+              nzType="experiment"></span>
+            <span>ML Models</span>
+          </li>
+          <li
             *ngIf="sidebarTabs.quota_enabled"
             nz-menu-item
             nz-tooltip="Quota information"

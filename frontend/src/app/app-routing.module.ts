@@ -35,6 +35,7 @@ import { FlarumComponent } from "./dashboard/component/user/flarum/flarum.compon
 import { AdminGmailComponent } from "./dashboard/component/admin/gmail/admin-gmail.component";
 import { DatasetDetailComponent } from "./dashboard/component/user/user-dataset/user-dataset-explorer/dataset-detail.component";
 import { UserDatasetComponent } from "./dashboard/component/user/user-dataset/user-dataset.component";
+import { UserMlModelComponent } from "./dashboard/component/user/user-ml-model/user-ml-model.component";
 import { HubWorkflowDetailComponent } from "./hub/component/workflow/detail/hub-workflow-detail.component";
 import { LandingPageComponent } from "./hub/component/landing-page/landing-page.component";
 import { DASHBOARD_ABOUT, DASHBOARD_USER_WORKFLOW } from "./app-routing.constant";
@@ -129,6 +130,20 @@ routes.push({
         {
           path: "dataset/create",
           component: DatasetDetailComponent,
+        },
+        {
+          path: "ml-model",
+          component: UserMlModelComponent,
+        },
+        {
+          path: "ml-model/create",
+          component: DatasetDetailComponent,
+          data: { isMlModel: true },
+        },
+        {
+          path: "ml-model/:did",
+          component: DatasetDetailComponent,
+          data: { isMlModel: true },
         },
         {
           path: "quota",

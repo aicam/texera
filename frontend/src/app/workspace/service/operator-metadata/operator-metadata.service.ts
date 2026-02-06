@@ -20,9 +20,14 @@
 import { HttpClient } from "@angular/common/http";
 import { Injectable } from "@angular/core";
 import { Observable } from "rxjs";
+import { map, shareReplay } from "rxjs/operators";
 import { AppSettings } from "../../../common/app-setting";
-import { OperatorMetadata, OperatorSchema } from "../../types/operator-schema.interface";
-import { shareReplay } from "rxjs/operators";
+import { GroupInfo, OperatorMetadata, OperatorSchema } from "../../types/operator-schema.interface";
+import {
+  MACHINE_LEARNING_GROUP,
+  MACHINE_LEARNING_GROUP_NAME,
+  MLFLOW_OPERATOR_SCHEMA,
+} from "./mlflow-operator-schema";
 
 export const OPERATOR_METADATA_ENDPOINT = "resources/operator-metadata";
 
@@ -54,12 +59,31 @@ export class OperatorMetadataService {
 
   private operatorMetadataObservable = this.httpClient
     .get<OperatorMetadata>(`${AppSettings.getApiEndpoint()}/${OPERATOR_METADATA_ENDPOINT}`)
-    .pipe(shareReplay(1));
+    .pipe(
+      map(metadata => this.mergeMlFlowOperator(metadata)),
+      shareReplay(1)
+    );
 
   constructor(private httpClient: HttpClient) {
     this.getOperatorMetadata().subscribe(data => {
       this.currentOperatorMetadata = data;
     });
+  }
+
+  /**
+   * Merges the frontend MLFlow operator and Machine Learning group into backend metadata.
+   * Used for the MLFlow prototype (no backend API).
+   */
+  private mergeMlFlowOperator(metadata: OperatorMetadata): OperatorMetadata {
+    const operators: OperatorSchema[] = [...metadata.operators];
+    if (!operators.some(op => op.operatorType === MLFLOW_OPERATOR_SCHEMA.operatorType)) {
+      operators.push(MLFLOW_OPERATOR_SCHEMA);
+    }
+    const groups: GroupInfo[] = [...metadata.groups];
+    if (!groups.some(g => g.groupName === MACHINE_LEARNING_GROUP_NAME)) {
+      groups.push(MACHINE_LEARNING_GROUP);
+    }
+    return { operators, groups };
   }
 
   /**

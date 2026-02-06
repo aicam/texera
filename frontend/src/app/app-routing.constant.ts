@@ -35,6 +35,8 @@ export const DASHBOARD_USER_WORKSPACE = `${DASHBOARD_USER}/workflow`;
 export const DASHBOARD_USER_WORKFLOW = `${DASHBOARD_USER}/workflow`;
 export const DASHBOARD_USER_DATASET = `${DASHBOARD_USER}/dataset`;
 export const DASHBOARD_USER_DATASET_CREATE = `${DASHBOARD_USER_DATASET}/create`;
+export const DASHBOARD_USER_ML_MODEL = `${DASHBOARD_USER}/ml-model`;
+export const DASHBOARD_USER_ML_MODEL_CREATE = `${DASHBOARD_USER_ML_MODEL}/create`;
 export const DASHBOARD_USER_QUOTA = `${DASHBOARD_USER}/quota`;
 export const DASHBOARD_USER_DISCUSSION = `${DASHBOARD_USER}/discussion`;
 
