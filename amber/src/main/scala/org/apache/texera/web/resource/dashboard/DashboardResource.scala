@@ -25,7 +25,7 @@ import org.apache.texera.dao.jooq.generated.Tables._
 import org.apache.texera.dao.jooq.generated.tables.pojos._
 import org.apache.texera.web.resource.dashboard.DashboardResource._
 import org.apache.texera.web.resource.dashboard.SearchQueryBuilder.{ALL_RESOURCE_TYPE, context}
-import org.apache.texera.web.resource.dashboard.user.dataset.DatasetResource.DashboardDataset
+import org.apache.texera.web.resource.dashboard.user.dataset.AssetResource.DashboardAsset
 import org.apache.texera.web.resource.dashboard.user.workflow.WorkflowResource.DashboardWorkflow
 import org.jooq.{Field, OrderField}
 
@@ -39,7 +39,7 @@ object DashboardResource {
       resourceType: String,
       workflow: Option[DashboardWorkflow] = None,
       project: Option[Project] = None,
-      dataset: Option[DashboardDataset] = None
+      asset: Option[DashboardAsset] = None
   )
 
   case class UserInfo(userId: Integer, userName: String, googleAvatar: Option[String])

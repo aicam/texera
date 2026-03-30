@@ -21,7 +21,7 @@ package org.apache.texera.amber.core.storage.model
 
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.texera.amber.config.EnvironmentalVariable
-import org.apache.texera.amber.core.storage.model.DatasetFileDocument.{
+import org.apache.texera.amber.core.storage.model.AssetFileDocument.{
   fileServiceGetPresignURLEndpoint,
   userJwtToken
 }
@@ -34,7 +34,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path, Paths}
 import scala.jdk.CollectionConverters.IteratorHasAsScala
 
-object DatasetFileDocument {
+object AssetFileDocument {
   // Since requests need to be sent to the FileService in order to read the file, we store USER_JWT_TOKEN in the environment vars
   // This variable should be NON-EMPTY in the dynamic-computing-unit architecture, i.e. each user-created computing unit should store user's jwt token.
   // In the local development or other architectures, this token can be empty.
@@ -46,14 +46,14 @@ object DatasetFileDocument {
     sys.env
       .getOrElse(
         EnvironmentalVariable.ENV_FILE_SERVICE_GET_PRESIGNED_URL_ENDPOINT,
-        "http://localhost:9092/api/dataset/presign-download"
+        "http://localhost:9092/api/asset/presign-download"
       )
       .trim
 }
 
-private[storage] class DatasetFileDocument(uri: URI)
+private[storage] class AssetFileDocument(uri: URI)
     extends VirtualDocument[Nothing]
-    with OnDataset
+    with OnAsset
     with LazyLogging {
   // Utility function to parse and decode URI segments into individual components
   private def parseUri(uri: URI): (String, String, Path) = {
@@ -61,18 +61,18 @@ private[storage] class DatasetFileDocument(uri: URI)
     if (segments.length < 3)
       throw new IllegalArgumentException("URI format is incorrect")
 
-    // parse uri to dataset components
-    val repositoryName = segments(0)
-    val datasetVersionHash = URLDecoder.decode(segments(1), StandardCharsets.UTF_8)
+    // parse uri to asset components
+    val assetName = segments(0)
+    val versionHash = URLDecoder.decode(segments(1), StandardCharsets.UTF_8)
     val decodedRelativeSegments =
       segments.drop(2).map(part => URLDecoder.decode(part, StandardCharsets.UTF_8))
     val fileRelativePath = Paths.get(decodedRelativeSegments.head, decodedRelativeSegments.tail: _*)
 
-    (repositoryName, datasetVersionHash, fileRelativePath)
+    (assetName, versionHash, fileRelativePath)
   }
 
   // Extract components from URI using the utility function
-  private val (repositoryName, datasetVersionHash, fileRelativePath) = parseUri(uri)
+  private val (assetName, versionHash, fileRelativePath) = parseUri(uri)
 
   private var tempFile: Option[File] = None
 
@@ -168,27 +168,27 @@ private[storage] class DatasetFileDocument(uri: URI)
       case Some(file) => Files.delete(file.toPath)
       case None       => // Do nothing
     }
-    lazy val datasetsRootPath =
+    lazy val assetsRootPath =
       Path
         .of(sys.env.getOrElse("TEXERA_HOME", "."))
         .resolve("amber")
         .resolve("user-resources")
         .resolve("datasets")
 
-    def getDatasetPath(did: Integer): Path = {
-      datasetsRootPath.resolve(did.toString)
+    def getAssetPath(aid: Integer): Path = {
+      assetsRootPath.resolve(aid.toString)
     }
 
-    // then remove the dataset file
+    // then remove the asset file
     GitVersionControlLocalFileStorage.removeFileFromRepo(
-      getDatasetPath(0),
-      getDatasetPath(0).resolve(fileRelativePath)
+      getAssetPath(0),
+      getAssetPath(0).resolve(fileRelativePath)
     )
   }
 
-  override def getRepositoryName(): String = repositoryName
+  override def getRepositoryName(): String = assetName
 
-  override def getVersionHash(): String = datasetVersionHash
+  override def getVersionHash(): String = versionHash
 
   override def getFileRelativePath(): String = fileRelativePath.toString
 }

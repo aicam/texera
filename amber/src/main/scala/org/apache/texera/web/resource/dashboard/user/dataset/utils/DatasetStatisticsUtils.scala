@@ -20,7 +20,7 @@
 package org.apache.texera.web.resource.dashboard.user.dataset.utils
 
 import org.apache.texera.dao.SqlServer
-import org.apache.texera.dao.jooq.generated.tables.Dataset.DATASET
+import org.apache.texera.dao.jooq.generated.tables.Asset.ASSET
 import org.apache.texera.web.resource.dashboard.user.quota.UserQuotaResource.DatasetQuota
 
 import scala.jdk.CollectionConverters._
@@ -34,8 +34,8 @@ object DatasetStatisticsUtils {
   def getUserCreatedDatasetCount(uid: Integer): Int = {
     val count = context
       .selectCount()
-      .from(DATASET)
-      .where(DATASET.OWNER_UID.eq(uid))
+      .from(ASSET)
+      .where(ASSET.OWNER_UID.eq(uid))
       .fetchOne(0, classOf[Int])
 
     count
@@ -45,20 +45,20 @@ object DatasetStatisticsUtils {
   private def getUserCreatedDatasetList(uid: Integer): List[DatasetQuota] = {
     val result = context
       .select(
-        DATASET.DID,
-        DATASET.NAME,
-        DATASET.CREATION_TIME
+        ASSET.AID,
+        ASSET.NAME,
+        ASSET.CREATION_TIME
       )
-      .from(DATASET)
-      .where(DATASET.OWNER_UID.eq(uid))
+      .from(ASSET)
+      .where(ASSET.OWNER_UID.eq(uid))
       .fetch()
 
     result.asScala
       .map(record =>
         DatasetQuota(
-          did = record.getValue(DATASET.DID),
-          name = record.getValue(DATASET.NAME),
-          creationTime = record.getValue(DATASET.CREATION_TIME).getTime,
+          did = record.getValue(ASSET.AID),
+          name = record.getValue(ASSET.NAME),
+          creationTime = record.getValue(ASSET.CREATION_TIME).getTime,
           size = 0
         )
       )

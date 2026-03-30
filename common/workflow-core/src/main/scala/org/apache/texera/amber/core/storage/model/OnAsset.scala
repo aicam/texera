@@ -19,7 +19,7 @@
 
 package org.apache.texera.amber.core.storage.model
 
-trait OnDataset {
+trait OnAsset {
   def getRepositoryName(): String
 
   def getVersionHash(): String

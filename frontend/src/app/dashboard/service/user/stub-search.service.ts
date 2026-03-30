@@ -89,14 +89,14 @@ export class StubSearchService {
       map(result => {
         const hasMismatch = type === "dataset" ? result.hasMismatch ?? false : undefined;
 
-        const filteredResults = type === "dataset" ? result.results.filter(i => i.dataset != null) : result.results;
+        const filteredResults = type === "dataset" ? result.results.filter(i => i.asset != null) : result.results;
 
         const entries: DashboardEntry[] = filteredResults.map(
           i =>
             this.testEntries.find(e => {
               if (i.workflow && e.type === "workflow" && e.workflow === i.workflow) return true;
               if (i.project && e.type === "project" && e.project === i.project) return true;
-              if (i.dataset && e.type === "dataset" && e.dataset === i.dataset) return true;
+              if (i.asset && e.type === "dataset" && e.dataset === i.asset) return true;
               return false;
             })!
         );

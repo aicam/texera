@@ -157,13 +157,13 @@ object WorkflowExecutionsResource {
       if (operatorId.nonEmpty) {
         val fileNameNode = operatorNode.path("operatorProperties").path("fileName")
         if (fileNameNode.isTextual) {
-          FileResolver.parseDatasetOwnerAndName(fileNameNode.asText()).foreach {
-            case (ownerEmail, datasetName) =>
+          FileResolver.parseAssetOwnerAndName(fileNameNode.asText()).foreach {
+            case (_, ownerEmail, repoName) =>
               val isOwner =
                 Option(currentUser.getEmail)
                   .exists(_.equalsIgnoreCase(ownerEmail))
               if (!isOwner) {
-                operatorDatasets.update(operatorId, (ownerEmail, datasetName))
+                operatorDatasets.update(operatorId, (ownerEmail, repoName))
               }
           }
         }
@@ -178,16 +178,16 @@ object WorkflowExecutionsResource {
     val uniqueDatasets = operatorDatasets.values.toSet
     val conditions = uniqueDatasets.map {
       case (ownerEmail, datasetName) =>
-        USER.EMAIL.equalIgnoreCase(ownerEmail).and(DATASET.NAME.equalIgnoreCase(datasetName))
+        USER.EMAIL.equalIgnoreCase(ownerEmail).and(ASSET.NAME.equalIgnoreCase(datasetName))
     }
 
     val nonDownloadableDatasets = context
-      .select(USER.EMAIL, DATASET.NAME)
-      .from(DATASET)
+      .select(USER.EMAIL, ASSET.NAME)
+      .from(ASSET)
       .join(USER)
-      .on(DATASET.OWNER_UID.eq(USER.UID))
+      .on(ASSET.OWNER_UID.eq(USER.UID))
       .where(conditions.reduce((a, b) => a.or(b)))
-      .and(DATASET.IS_DOWNLOADABLE.eq(false))
+      .and(ASSET.IS_DOWNLOADABLE.eq(false))
       .fetch()
       .asScala
       .map(record => (record.value1(), record.value2()))

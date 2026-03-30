@@ -133,8 +133,8 @@ export class SearchBarComponent {
       return new DashboardEntry(resultItem.project).name;
     } else if (resultItem.file) {
       return new DashboardEntry(resultItem.file).name;
-    } else if (resultItem.dataset) {
-      return new DashboardEntry(resultItem.dataset).name;
+    } else if (resultItem.asset) {
+      return new DashboardEntry(resultItem.asset).name;
     } else {
       throw new Error("Unexpected type in SearchResult.");
     }

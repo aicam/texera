@@ -25,14 +25,14 @@
 \else
     \set DB_NAME 'texera_db'
 \endif
-
--- ============================================
--- 1. Drop and recreate the database (psql only)
---    Remove if you already created texera_db
--- ============================================
-\c postgres
-DROP DATABASE IF EXISTS :"DB_NAME";
-CREATE DATABASE :"DB_NAME";
+--
+-- -- ============================================
+-- -- 1. Drop and recreate the database (psql only)
+-- --    Remove if you already created texera_db
+-- -- ============================================
+-- \c postgres
+-- DROP DATABASE IF EXISTS :"DB_NAME";
+-- CREATE DATABASE :"DB_NAME";
 
 -- ============================================
 -- 2. Connect to the new database (psql only)
@@ -58,20 +58,20 @@ DROP TABLE IF EXISTS workflow_version CASCADE;
 DROP TABLE IF EXISTS project CASCADE;
 DROP TABLE IF EXISTS workflow_of_project CASCADE;
 DROP TABLE IF EXISTS workflow_executions CASCADE;
-DROP TABLE IF EXISTS dataset_upload_session CASCADE;
-DROP TABLE IF EXISTS dataset_upload_session_part CASCADE;
+DROP TABLE IF EXISTS asset_upload_session CASCADE;
+DROP TABLE IF EXISTS asset_upload_session_part CASCADE;
 
-DROP TABLE IF EXISTS dataset CASCADE;
-DROP TABLE IF EXISTS dataset_user_access CASCADE;
-DROP TABLE IF EXISTS dataset_version CASCADE;
+DROP TABLE IF EXISTS asset CASCADE;
+DROP TABLE IF EXISTS asset_user_access CASCADE;
+DROP TABLE IF EXISTS asset_version CASCADE;
 DROP TABLE IF EXISTS public_project CASCADE;
 DROP TABLE IF EXISTS project_user_access CASCADE;
 DROP TABLE IF EXISTS workflow_user_likes CASCADE;
 DROP TABLE IF EXISTS workflow_user_clones CASCADE;
 DROP TABLE IF EXISTS workflow_view_count CASCADE;
 DROP TABLE IF EXISTS user_action CASCADE;
-DROP TABLE IF EXISTS dataset_user_likes CASCADE;
-DROP TABLE IF EXISTS dataset_view_count CASCADE;
+DROP TABLE IF EXISTS asset_user_likes CASCADE;
+DROP TABLE IF EXISTS asset_view_count CASCADE;
 DROP TABLE IF EXISTS site_settings CASCADE;
 DROP TABLE IF EXISTS computing_unit_user_access CASCADE;
 
@@ -82,10 +82,12 @@ DROP TABLE IF EXISTS computing_unit_user_access CASCADE;
 DROP TYPE IF EXISTS user_role_enum CASCADE;
 DROP TYPE IF EXISTS privilege_enum CASCADE;
 DROP TYPE IF EXISTS action_enum CASCADE;
+DROP TYPE IF EXISTS asset_type_enum CASCADE;
 
 CREATE TYPE user_role_enum AS ENUM ('INACTIVE', 'RESTRICTED', 'REGULAR', 'ADMIN');
 CREATE TYPE action_enum AS ENUM ('like', 'unlike', 'view', 'clone');
 CREATE TYPE privilege_enum AS ENUM ('NONE', 'READ', 'WRITE');
+CREATE TYPE asset_type_enum AS ENUM ('dataset', 'model');
 CREATE TYPE workflow_computing_unit_type_enum AS ENUM ('local', 'kubernetes');
 
 -- ============================================
@@ -242,47 +244,48 @@ CREATE TABLE IF NOT EXISTS public_project
     -- Note: MySQL schema doesn't define a foreign key for uid
     );
 
--- dataset
-CREATE TABLE IF NOT EXISTS dataset
+-- asset
+CREATE TABLE IF NOT EXISTS asset
 (
-    did            SERIAL PRIMARY KEY,
-    owner_uid      INT NOT NULL,
-    name           VARCHAR(128) NOT NULL,
+    aid             SERIAL PRIMARY KEY,
+    owner_uid       INT NOT NULL,
+    name            VARCHAR(128) NOT NULL,
+    type            asset_type_enum NOT NULL DEFAULT 'dataset',
     repository_name VARCHAR(128),
-    is_public      BOOLEAN NOT NULL DEFAULT TRUE,
+    is_public       BOOLEAN NOT NULL DEFAULT TRUE,
     is_downloadable BOOLEAN NOT NULL DEFAULT TRUE,
-    description    TEXT NOT NULL,
-    creation_time  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    cover_image    varchar(255),
+    description     TEXT NOT NULL,
+    creation_time   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    cover_image     varchar(255),
     FOREIGN KEY (owner_uid) REFERENCES "user"(uid) ON DELETE CASCADE
     );
 
--- dataset_user_access
-CREATE TABLE IF NOT EXISTS dataset_user_access
+-- asset_user_access
+CREATE TABLE IF NOT EXISTS asset_user_access
 (
-    did       INT NOT NULL,
+    aid       INT NOT NULL,
     uid       INT NOT NULL,
     privilege privilege_enum NOT NULL DEFAULT 'NONE',
-    PRIMARY KEY (did, uid),
-    FOREIGN KEY (did) REFERENCES dataset(did) ON DELETE CASCADE,
+    PRIMARY KEY (aid, uid),
+    FOREIGN KEY (aid) REFERENCES asset(aid) ON DELETE CASCADE,
     FOREIGN KEY (uid) REFERENCES "user"(uid) ON DELETE CASCADE
     );
 
--- dataset_version
-CREATE TABLE IF NOT EXISTS dataset_version
+-- asset_version
+CREATE TABLE IF NOT EXISTS asset_version
 (
-    dvid          SERIAL PRIMARY KEY,
-    did           INT NOT NULL,
+    avid          SERIAL PRIMARY KEY,
+    aid           INT NOT NULL,
     creator_uid   INT NOT NULL,
     name          VARCHAR(128) NOT NULL,
     version_hash  VARCHAR(64) NOT NULL,
     creation_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (did) REFERENCES dataset(did) ON DELETE CASCADE
+    FOREIGN KEY (aid) REFERENCES asset(aid) ON DELETE CASCADE
     );
 
-CREATE TABLE IF NOT EXISTS dataset_upload_session
+CREATE TABLE IF NOT EXISTS asset_upload_session
 (
-    did                 INT          NOT NULL,
+    aid                 INT          NOT NULL,
     uid                 INT          NOT NULL,
     file_path           TEXT         NOT NULL,
     upload_id           VARCHAR(256) NOT NULL UNIQUE,
@@ -292,25 +295,25 @@ CREATE TABLE IF NOT EXISTS dataset_upload_session
     part_size_bytes     BIGINT       NOT NULL,
     created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
 
-    PRIMARY KEY (uid, did, file_path),
+    PRIMARY KEY (uid, aid, file_path),
 
-    FOREIGN KEY (did) REFERENCES dataset(did) ON DELETE CASCADE,
+    FOREIGN KEY (aid) REFERENCES asset(aid) ON DELETE CASCADE,
     FOREIGN KEY (uid) REFERENCES "user"(uid) ON DELETE CASCADE,
 
-    CONSTRAINT chk_dataset_upload_session_num_parts_requested_positive
+    CONSTRAINT chk_asset_upload_session_num_parts_requested_positive
         CHECK (num_parts_requested >= 1),
 
-    CONSTRAINT chk_dataset_upload_session_file_size_bytes_positive
+    CONSTRAINT chk_asset_upload_session_file_size_bytes_positive
         CHECK (file_size_bytes > 0),
 
-    CONSTRAINT chk_dataset_upload_session_part_size_bytes_positive
+    CONSTRAINT chk_asset_upload_session_part_size_bytes_positive
         CHECK (part_size_bytes > 0),
 
-    CONSTRAINT chk_dataset_upload_session_part_size_bytes_s3_upper_bound
+    CONSTRAINT chk_asset_upload_session_part_size_bytes_s3_upper_bound
         CHECK (part_size_bytes <= 5368709120)
 );
 
-CREATE TABLE IF NOT EXISTS dataset_upload_session_part
+CREATE TABLE IF NOT EXISTS asset_upload_session_part
 (
     upload_id   VARCHAR(256) NOT NULL,
     part_number INT          NOT NULL,
@@ -321,7 +324,7 @@ CREATE TABLE IF NOT EXISTS dataset_upload_session_part
     CONSTRAINT chk_part_number_positive CHECK (part_number > 0),
 
     FOREIGN KEY (upload_id)
-        REFERENCES dataset_upload_session(upload_id)
+        REFERENCES asset_upload_session(upload_id)
         ON DELETE CASCADE
 );
 
@@ -387,23 +390,23 @@ CREATE TABLE IF NOT EXISTS user_action (
     FOREIGN KEY (uid) REFERENCES "user"(uid) ON DELETE SET NULL
 );
 
--- dataset_user_likes table
-CREATE TABLE IF NOT EXISTS dataset_user_likes
+-- asset_user_likes table
+CREATE TABLE IF NOT EXISTS asset_user_likes
 (
     uid INTEGER NOT NULL,
-    did INTEGER NOT NULL,
-    PRIMARY KEY (uid, did),
+    aid INTEGER NOT NULL,
+    PRIMARY KEY (uid, aid),
     FOREIGN KEY (uid) REFERENCES "user"(uid) ON DELETE CASCADE,
-    FOREIGN KEY (did) REFERENCES dataset(did) ON DELETE CASCADE
+    FOREIGN KEY (aid) REFERENCES asset(aid) ON DELETE CASCADE
     );
 
--- dataset_view_count table
-CREATE TABLE IF NOT EXISTS dataset_view_count
+-- asset_view_count table
+CREATE TABLE IF NOT EXISTS asset_view_count
 (
-    did        INTEGER NOT NULL,
+    aid        INTEGER NOT NULL,
     view_count INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (did),
-    FOREIGN KEY (did) REFERENCES dataset(did) ON DELETE CASCADE
+    PRIMARY KEY (aid),
+    FOREIGN KEY (aid) REFERENCES asset(aid) ON DELETE CASCADE
     );
 
 -- site_settings table
@@ -448,7 +451,7 @@ BEGIN
   FOR r IN
     SELECT indexname FROM pg_indexes
     WHERE (indexdef ILIKE '%USING gin%' OR indexdef ILIKE '%USING pgroonga%')
-    AND tablename IN ('workflow', 'user', 'project', 'dataset', 'dataset_version')
+    AND tablename IN ('workflow', 'user', 'project', 'asset', 'asset_version')
   LOOP
     EXECUTE format('DROP INDEX IF EXISTS %I;', r.indexname);
   END LOOP;
@@ -478,12 +481,12 @@ BEGIN
            CASE
              WHEN tablename = 'workflow' THEN
                '(COALESCE(name, '''') || '' '' || COALESCE(description, '''') || '' '' || COALESCE(content, ''''))'
-             WHEN tablename IN ('project', 'dataset') THEN
+             WHEN tablename IN ('project', 'asset') THEN
                '(COALESCE(name, '''') || '' '' || COALESCE(description, ''''))'
              ELSE
                'COALESCE(name, '''')'
            END AS index_column
-    FROM (VALUES ('workflow'), ('user'), ('project'), ('dataset'), ('dataset_version')) AS t(tablename)
+    FROM (VALUES ('workflow'), ('user'), ('project'), ('asset'), ('asset_version')) AS t(tablename)
   LOOP
     -- Create PGroonga index with proper TokenFilterStem usage
     EXECUTE format(

@@ -25,15 +25,15 @@ import org.apache.texera.auth.SessionUser
 import org.apache.texera.dao.SqlServer
 import org.apache.texera.dao.jooq.generated.Tables._
 import org.apache.texera.dao.jooq.generated.enums.ActionEnum
-import org.apache.texera.dao.jooq.generated.tables.Dataset.DATASET
-import org.apache.texera.dao.jooq.generated.tables.DatasetUserAccess.DATASET_USER_ACCESS
+import org.apache.texera.dao.jooq.generated.tables.Asset.ASSET
+import org.apache.texera.dao.jooq.generated.tables.AssetUserAccess.ASSET_USER_ACCESS
 import org.apache.texera.dao.jooq.generated.tables.User.USER
-import org.apache.texera.dao.jooq.generated.tables.pojos.{Dataset, DatasetUserAccess}
+import org.apache.texera.dao.jooq.generated.tables.pojos.{Asset, AssetUserAccess}
 import org.apache.texera.web.resource.dashboard.DashboardResource.DashboardClickableFileEntry
 import org.apache.texera.web.resource.dashboard.hub.ActionType.{Clone, Like, Unlike, View}
 import org.apache.texera.web.resource.dashboard.hub.EntityTables._
 import org.apache.texera.web.resource.dashboard.hub.HubResource._
-import org.apache.texera.web.resource.dashboard.user.dataset.DatasetResource.DashboardDataset
+import org.apache.texera.web.resource.dashboard.user.dataset.AssetResource.DashboardAsset
 import org.apache.texera.web.resource.dashboard.user.workflow.WorkflowResource.{
   DashboardWorkflow,
   baseWorkflowSelect,
@@ -278,48 +278,48 @@ object HubResource {
     mapWorkflowEntries(records, uid)
   }
 
-  def fetchDashboardDatasetsByDids(dids: Seq[Integer], uid: Integer): List[DashboardDataset] = {
+  def fetchDashboardAssetsByDids(dids: Seq[Integer], uid: Integer): List[DashboardAsset] = {
     if (dids.isEmpty) {
-      return List.empty[DashboardDataset]
+      return List.empty[DashboardAsset]
     }
 
     val records = context
       .select()
       .from(
-        DATASET
-          .leftJoin(DATASET_USER_ACCESS)
-          .on(DATASET_USER_ACCESS.DID.eq(DATASET.DID))
+        ASSET
+          .leftJoin(ASSET_USER_ACCESS)
+          .on(ASSET_USER_ACCESS.AID.eq(ASSET.AID))
           .leftJoin(USER)
-          .on(USER.UID.eq(DATASET.OWNER_UID))
+          .on(USER.UID.eq(ASSET.OWNER_UID))
       )
-      .where(DATASET.DID.in(dids: _*))
+      .where(ASSET.AID.in(dids: _*))
       .groupBy(
-        DATASET.DID,
-        DATASET.NAME,
-        DATASET.DESCRIPTION,
-        DATASET.OWNER_UID,
+        ASSET.AID,
+        ASSET.NAME,
+        ASSET.DESCRIPTION,
+        ASSET.OWNER_UID,
         USER.NAME,
-        DATASET_USER_ACCESS.DID,
-        DATASET_USER_ACCESS.UID,
+        ASSET_USER_ACCESS.AID,
+        ASSET_USER_ACCESS.UID,
         USER.UID
       )
       .fetch()
 
     records.asScala
       .map { record =>
-        val dataset = record.into(DATASET).into(classOf[Dataset])
-        val datasetAccess = record.into(DATASET_USER_ACCESS).into(classOf[DatasetUserAccess])
+        val asset = record.into(ASSET).into(classOf[Asset])
+        val assetAccess = record.into(ASSET_USER_ACCESS).into(classOf[AssetUserAccess])
         val ownerEmail = record.into(USER).getEmail
-        DashboardDataset(
-          isOwner = if (uid == null) false else dataset.getOwnerUid == uid,
-          dataset = dataset,
-          accessPrivilege = datasetAccess.getPrivilege,
+        DashboardAsset(
+          isOwner = if (uid == null) false else asset.getOwnerUid == uid,
+          asset = asset,
+          accessPrivilege = assetAccess.getPrivilege,
           ownerEmail = ownerEmail,
-          size = LakeFSStorageClient.retrieveRepositorySize(dataset.getRepositoryName)
+          size = LakeFSStorageClient.retrieveRepositorySize(asset.getRepositoryName)
         )
       }
       .toList
-      .distinctBy(_.dataset.getDid)
+      .distinctBy(_.asset.getAid)
   }
 }
 
@@ -480,16 +480,16 @@ class HubResource {
                 resourceType = entityType.value,
                 workflow = Some(w),
                 project = None,
-                dataset = None
+                asset = None
               )
             }
           } else if (entityType == EntityType.Dataset) {
-            fetchDashboardDatasetsByDids(topIds, currentUid).map { d =>
+            fetchDashboardAssetsByDids(topIds, currentUid).map { d =>
               DashboardClickableFileEntry(
                 resourceType = entityType.value,
                 workflow = None,
                 project = None,
-                dataset = Some(d)
+                asset = Some(d)
               )
             }
           } else {
@@ -670,7 +670,7 @@ class HubResource {
           case EntityType.Workflow =>
             (WORKFLOW_USER_ACCESS: Table[_], WORKFLOW_USER_ACCESS.WID, WORKFLOW_USER_ACCESS.UID)
           case EntityType.Dataset =>
-            (DATASET_USER_ACCESS: Table[_], DATASET_USER_ACCESS.DID, DATASET_USER_ACCESS.UID)
+            (ASSET_USER_ACCESS: Table[_], ASSET_USER_ACCESS.AID, ASSET_USER_ACCESS.UID)
         }
 
         val records = context

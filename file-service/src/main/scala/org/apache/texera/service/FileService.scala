@@ -30,11 +30,11 @@ import org.apache.texera.amber.config.StorageConfig
 import org.apache.texera.amber.core.storage.util.LakeFSStorageClient
 import org.apache.texera.auth.{JwtAuthFilter, RequestLoggingFilter, SessionUser}
 import org.apache.texera.dao.SqlServer
-import org.apache.texera.service.`type`.DatasetFileNode
-import org.apache.texera.service.`type`.serde.DatasetFileNodeSerializer
+import org.apache.texera.service.`type`.AssetFileNode
+import org.apache.texera.service.`type`.serde.AssetFileNodeSerializer
 import org.apache.texera.service.resource.{
-  DatasetAccessResource,
-  DatasetResource,
+  AssetAccessResource,
+  AssetResource,
   HealthCheckResource
 }
 import org.apache.texera.service.util.S3StorageClient
@@ -54,9 +54,9 @@ class FileService extends Application[FileServiceConfiguration] with LazyLogging
     // Register Scala module to Dropwizard default object mapper
     bootstrap.getObjectMapper.registerModule(DefaultScalaModule)
 
-    // register a new custom module just for DatasetFileNode serde/deserde
+    // register a new custom module just for AssetFileNode serde/deserde
     val customSerializerModule = new SimpleModule("CustomSerializers")
-    customSerializerModule.addSerializer(classOf[DatasetFileNode], new DatasetFileNodeSerializer())
+    customSerializerModule.addSerializer(classOf[AssetFileNode], new AssetFileNodeSerializer())
     bootstrap.getObjectMapper.registerModule(customSerializerModule)
   }
 
@@ -89,8 +89,8 @@ class FileService extends Application[FileServiceConfiguration] with LazyLogging
       new io.dropwizard.auth.AuthValueFactoryProvider.Binder(classOf[SessionUser])
     )
 
-    environment.jersey.register(classOf[DatasetResource])
-    environment.jersey.register(classOf[DatasetAccessResource])
+    environment.jersey.register(classOf[AssetResource])
+    environment.jersey.register(classOf[AssetAccessResource])
 
     // Route request logs through SLF4J, controlled by TEXERA_SERVICE_LOG_LEVEL
     RequestLoggingFilter.register(environment.getApplicationContext)

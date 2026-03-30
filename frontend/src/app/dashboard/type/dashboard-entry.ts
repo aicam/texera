@@ -107,23 +107,23 @@ export class DashboardEntry {
       this.accessibleUserIds = [];
     } else if (isDashboardDataset(value)) {
       this.type = EntityType.Dataset;
-      this.id = value.dataset.did;
-      this.name = value.dataset.name;
-      this.description = value.dataset.description;
-      this.creationTime = value.dataset.creationTime;
-      this.lastModifiedTime = value.dataset.creationTime;
+      this.id = value.asset.aid;
+      this.name = value.asset.name;
+      this.description = value.asset.description;
+      this.creationTime = value.asset.creationTime;
+      this.lastModifiedTime = value.asset.creationTime;
       this.accessLevel = value.accessPrivilege;
       this.ownerName = "";
       this.ownerEmail = value.ownerEmail;
       this.ownerGoogleAvatar = "";
-      this.ownerId = value.dataset.ownerUid;
+      this.ownerId = value.asset.ownerUid;
       this.size = value.size;
       this.viewCount = 0;
       this.cloneCount = 0;
       this.likeCount = 0;
       this.isLiked = false;
       this.accessibleUserIds = [];
-      this.coverImageUrl = value.dataset.coverImage;
+      this.coverImageUrl = value.asset.coverImage;
     } else {
       throw new Error("Unexpected type in DashboardEntry.");
     }

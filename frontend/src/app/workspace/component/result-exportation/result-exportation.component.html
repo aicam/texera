@@ -112,11 +112,11 @@
       <nz-autocomplete #auto>
         <nz-auto-option
           *ngFor="let dataset of filteredUserAccessibleDatasets"
-          [nzLabel]="dataset.dataset.name">
+          [nzLabel]="dataset.asset.name">
           <div class="auto-option-content">
-            <div class="dataset-id-container">{{dataset.dataset.did?.toString()}}</div>
+            <div class="dataset-id-container">{{dataset.asset.aid?.toString()}}</div>
 
-            <span class="dataset-name">{{ dataset.dataset.name }}</span>
+            <span class="dataset-name">{{ dataset.asset.name }}</span>
 
             <button
               nz-button

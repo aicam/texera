@@ -24,7 +24,7 @@
       <nz-avatar
         [ngStyle]="{ 'background-color': 'grey', 'vertical-align': 'middle' }"
         [nzGap]="4"
-        [nzText]="'' + dataset.did"
+        [nzText]="'' + dataset.aid"
         nzSize="default"></nz-avatar>
     </nz-list-item-meta-avatar>
 
@@ -33,7 +33,7 @@
       <div class="dataset-item-meta-title">
         <a
           *ngIf="!editingName; else customDatasetTitle "
-          [routerLink]="DASHBOARD_USER_DATASET + '/' + dataset.did"
+          [routerLink]="DASHBOARD_USER_DATASET + '/' + dataset.aid"
           class="dataset-name"
           >{{ dataset.name }}</a
         >

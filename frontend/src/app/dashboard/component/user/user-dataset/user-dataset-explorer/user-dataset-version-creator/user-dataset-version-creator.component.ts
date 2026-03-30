@@ -168,9 +168,10 @@ export class UserDatasetVersionCreatorComponent implements OnInit {
       const ds: Dataset = {
         name: sanitizedName,
         description: this.form.get("description")?.value,
+        type: "dataset",
         isPublic: this.isDatasetPublic,
         isDownloadable: this.isDatasetDownloadable,
-        did: undefined,
+        aid: undefined,
         ownerUid: undefined,
         storagePath: undefined,
         creationTime: undefined,

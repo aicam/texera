@@ -66,12 +66,12 @@ export class FileSelectionComponent implements OnInit {
         // if users already select some file, then ONLY show that selected dataset & related version
         const selectedDatasetFile = parseFilePathToDatasetFile(this.selectedFilePath);
         this.selectedDataset = this.datasets.find(
-          d => d.ownerEmail === selectedDatasetFile.ownerEmail && d.dataset.name === selectedDatasetFile.datasetName
+          d => d.ownerEmail === selectedDatasetFile.ownerEmail && d.asset.name === selectedDatasetFile.datasetName
         );
         this.isDatasetSelected = !!this.selectedDataset;
-        if (this.selectedDataset && this.selectedDataset.dataset.did !== undefined) {
+        if (this.selectedDataset && this.selectedDataset.asset.aid !== undefined) {
           this.datasetService
-            .retrieveDatasetVersionList(this.selectedDataset.dataset.did)
+            .retrieveDatasetVersionList(this.selectedDataset.asset.aid)
             .pipe(untilDestroyed(this))
             .subscribe(versions => {
               this.datasetVersions = versions;
@@ -86,9 +86,9 @@ export class FileSelectionComponent implements OnInit {
     this.selectedVersion = undefined;
     this.suggestedFileTreeNodes = [];
     this.isDatasetSelected = !!this.selectedDataset;
-    if (this.selectedDataset && this.selectedDataset.dataset.did !== undefined) {
+    if (this.selectedDataset && this.selectedDataset.asset.aid !== undefined) {
       this.datasetService
-        .retrieveDatasetVersionList(this.selectedDataset.dataset.did)
+        .retrieveDatasetVersionList(this.selectedDataset.asset.aid)
         .pipe(untilDestroyed(this))
         .subscribe(versions => {
           this.datasetVersions = versions;
@@ -104,12 +104,12 @@ export class FileSelectionComponent implements OnInit {
     this.suggestedFileTreeNodes = [];
     if (
       this.selectedDataset &&
-      this.selectedDataset.dataset.did !== undefined &&
+      this.selectedDataset.asset.aid !== undefined &&
       this.selectedVersion &&
-      this.selectedVersion.dvid !== undefined
+      this.selectedVersion.avid !== undefined
     ) {
       this.datasetService
-        .retrieveDatasetVersionFileTree(this.selectedDataset.dataset.did, this.selectedVersion.dvid)
+        .retrieveDatasetVersionFileTree(this.selectedDataset.asset.aid, this.selectedVersion.avid)
         .pipe(untilDestroyed(this))
         .subscribe(data => {
           this.suggestedFileTreeNodes = data.fileNodes;

@@ -23,10 +23,8 @@ import io.dropwizard.auth.Auth
 import org.apache.texera.auth.SessionUser
 import org.apache.texera.dao.SqlServer
 import org.apache.texera.dao.jooq.generated.Tables.{
-  DATASET_USER_ACCESS,
   PROJECT_USER_ACCESS,
-  USER,
-  WORKFLOW_USER_ACCESS
+  USER
 }
 import org.apache.texera.dao.jooq.generated.enums.PrivilegeEnum
 import org.apache.texera.dao.jooq.generated.tables.daos.{ProjectDao, ProjectUserAccessDao, UserDao}
@@ -54,11 +52,11 @@ object ProjectAccessResource {
     Option(
       context
         .select(PROJECT_USER_ACCESS.PRIVILEGE)
-        .from(WORKFLOW_USER_ACCESS)
+        .from(PROJECT_USER_ACCESS)
         .where(
           PROJECT_USER_ACCESS.PID
             .eq(pid)
-            .and(DATASET_USER_ACCESS.UID.eq(uid))
+            .and(PROJECT_USER_ACCESS.UID.eq(uid))
         )
         .fetchOneInto(classOf[PrivilegeEnum])
     ).getOrElse(PrivilegeEnum.NONE)

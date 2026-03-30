@@ -19,13 +19,13 @@
 
 package org.apache.texera.web.resource.dashboard.user.dataset
 
-import org.apache.texera.dao.jooq.generated.tables.pojos.Dataset
+import org.apache.texera.dao.jooq.generated.tables.pojos.Asset
 import org.jooq.EnumType
 
-object DatasetResource {
+object AssetResource {
   // TODO: move these community resource definitions to a centralized package, similar to workflow-core
-  case class DashboardDataset(
-      dataset: Dataset,
+  case class DashboardAsset(
+      asset: Asset,
       ownerEmail: String,
       accessPrivilege: EnumType,
       isOwner: Boolean,

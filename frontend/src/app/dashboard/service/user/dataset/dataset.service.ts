@@ -29,7 +29,7 @@ import { DatasetStagedObject } from "../../../../common/type/dataset-staged-obje
 import { GuiConfigService } from "../../../../common/service/gui-config.service";
 import { AuthService } from "src/app/common/service/user/auth.service";
 
-export const DATASET_BASE_URL = "dataset";
+export const DATASET_BASE_URL = "asset";
 export const DATASET_CREATE_URL = DATASET_BASE_URL + "/create";
 export const DATASET_UPDATE_BASE_URL = DATASET_BASE_URL + "/update";
 export const DATASET_UPDATE_NAME_URL = DATASET_UPDATE_BASE_URL + "/name";
@@ -46,7 +46,7 @@ export const DATASET_VERSION_LATEST_URL = DATASET_VERSION_BASE_URL + "/latest";
 export const DEFAULT_DATASET_NAME = "Untitled dataset";
 export const DATASET_PUBLIC_VERSION_BASE_URL = "publicVersion";
 export const DATASET_PUBLIC_VERSION_RETRIEVE_LIST_URL = DATASET_PUBLIC_VERSION_BASE_URL + "/list";
-export const DATASET_GET_OWNERS_URL = DATASET_BASE_URL + "/user-dataset-owners";
+export const DATASET_GET_OWNERS_URL = DATASET_BASE_URL + "/user-asset-owners";
 
 export interface MultipartUploadProgress {
   filePath: string;
@@ -68,10 +68,11 @@ export class DatasetService {
 
   public createDataset(dataset: Dataset): Observable<DashboardDataset> {
     return this.http.post<DashboardDataset>(`${AppSettings.getApiEndpoint()}/${DATASET_CREATE_URL}`, {
-      datasetName: dataset.name,
-      datasetDescription: dataset.description,
-      isDatasetPublic: dataset.isPublic,
-      isDatasetDownloadable: dataset.isDownloadable,
+      assetName: dataset.name,
+      assetDescription: dataset.description,
+      assetType: dataset.type || "dataset",
+      isAssetPublic: dataset.isPublic,
+      isAssetDownloadable: dataset.isDownloadable,
     });
   }
 
@@ -107,12 +108,12 @@ export class DatasetService {
     let params = new HttpParams();
 
     if (dvid !== undefined && dvid !== null) {
-      params = params.set("dvid", dvid.toString());
+      params = params.set("avid", dvid.toString());
     } else {
       params = params.set("latest", "true");
     }
 
-    return this.http.get(`${AppSettings.getApiEndpoint()}/dataset/${did}/versionZip`, {
+    return this.http.get(`${AppSettings.getApiEndpoint()}/asset/${did}/versionZip`, {
       params,
       responseType: "blob",
     });
@@ -125,15 +126,15 @@ export class DatasetService {
   public createDatasetVersion(did: number, newVersion: string): Observable<DatasetVersion> {
     return this.http
       .post<{
-        datasetVersion: DatasetVersion;
+        assetVersion: DatasetVersion;
         fileNodes: DatasetFileNode[];
       }>(`${AppSettings.getApiEndpoint()}/${DATASET_BASE_URL}/${did}/version/create`, newVersion, {
         headers: { "Content-Type": "text/plain" },
       })
       .pipe(
         map(response => {
-          response.datasetVersion.fileNodes = response.fileNodes;
-          return response.datasetVersion;
+          response.assetVersion.fileNodes = response.fileNodes;
+          return response.assetVersion;
         })
       );
   }
@@ -232,7 +233,7 @@ export class DatasetService {
       const initParams = new HttpParams()
         .set("type", "init")
         .set("ownerEmail", ownerEmail)
-        .set("datasetName", datasetName)
+        .set("name", datasetName)
         .set("filePath", encodeURIComponent(filePath))
         .set("fileSizeBytes", file.size.toString())
         .set("partSizeBytes", partSize.toString())
@@ -335,7 +336,7 @@ export class DatasetService {
                   const partUrl =
                     `${AppSettings.getApiEndpoint()}/${DATASET_BASE_URL}/multipart-upload/part` +
                     `?ownerEmail=${encodeURIComponent(ownerEmail)}` +
-                    `&datasetName=${encodeURIComponent(datasetName)}` +
+                    `&name=${encodeURIComponent(datasetName)}` +
                     `&filePath=${encodeURIComponent(filePath)}` +
                     `&partNumber=${partNumber}`;
 
@@ -359,7 +360,7 @@ export class DatasetService {
                 const finishParams = new HttpParams()
                   .set("type", "finish")
                   .set("ownerEmail", ownerEmail)
-                  .set("datasetName", datasetName)
+                  .set("name", datasetName)
                   .set("filePath", encodeURIComponent(filePath));
 
                 return this.http.post(
@@ -411,7 +412,7 @@ export class DatasetService {
   }
 
   public listMultipartUploads(ownerEmail: string, datasetName: string): Observable<string[]> {
-    const params = new HttpParams().set("type", "list").set("ownerEmail", ownerEmail).set("datasetName", datasetName);
+    const params = new HttpParams().set("type", "list").set("ownerEmail", ownerEmail).set("name", datasetName);
 
     return this.http
       .post<{
@@ -429,7 +430,7 @@ export class DatasetService {
     const params = new HttpParams()
       .set("type", isAbort ? "abort" : "finish")
       .set("ownerEmail", ownerEmail)
-      .set("datasetName", datasetName)
+      .set("name", datasetName)
       .set("filePath", encodeURIComponent(filePath));
 
     return this.http.post<Response>(
@@ -488,13 +489,13 @@ export class DatasetService {
   public retrieveDatasetLatestVersion(did: number): Observable<DatasetVersion> {
     return this.http
       .get<{
-        datasetVersion: DatasetVersion;
+        assetVersion: DatasetVersion;
         fileNodes: DatasetFileNode[];
       }>(`${AppSettings.getApiEndpoint()}/${DATASET_BASE_URL}/${did}/${DATASET_VERSION_LATEST_URL}`)
       .pipe(
         map(response => {
-          response.datasetVersion.fileNodes = response.fileNodes;
-          return response.datasetVersion;
+          response.assetVersion.fileNodes = response.fileNodes;
+          return response.assetVersion;
         })
       );
   }
@@ -522,14 +523,14 @@ export class DatasetService {
 
   public updateDatasetName(did: number, name: string): Observable<Response> {
     return this.http.post<Response>(`${AppSettings.getApiEndpoint()}/${DATASET_UPDATE_NAME_URL}`, {
-      did: did,
+      aid: did,
       name: name,
     });
   }
 
   public updateDatasetDescription(did: number, description: string): Observable<Response> {
     return this.http.post<Response>(`${AppSettings.getApiEndpoint()}/${DATASET_UPDATE_DESCRIPTION_URL}`, {
-      did: did,
+      aid: did,
       description: description,
     });
   }
@@ -553,7 +554,7 @@ export class DatasetService {
   }
 
   public updateDatasetCoverImage(did: number, coverImage: string): Observable<Response> {
-    return this.http.post<Response>(`${AppSettings.getApiEndpoint()}/dataset/${did}/update/cover`, {
+    return this.http.post<Response>(`${AppSettings.getApiEndpoint()}/asset/${did}/update/cover`, {
       coverImage: coverImage,
     });
   }

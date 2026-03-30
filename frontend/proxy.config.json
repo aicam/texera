@@ -14,12 +14,12 @@
     "secure": false,
     "changeOrigin": true
   },
-  "/api/dataset": {
+  "/api/asset": {
     "target": "http://localhost:9092",
     "secure": false,
     "changeOrigin": true
   },
-  "/api/access/dataset/**": {
+  "/api/access/asset/**": {
     "target": "http://localhost:9092",
     "secure": false,
     "changeOrigin": true

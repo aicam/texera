@@ -202,7 +202,7 @@ export class ResultExportationComponent implements OnInit {
 
     if (value) {
       this.filteredUserAccessibleDatasets = this.userAccessibleDatasets.filter(
-        dataset => dataset.dataset.did && dataset.dataset.name.toLowerCase().includes(value.toLowerCase())
+        dataset => dataset.asset.aid && dataset.asset.name.toLowerCase().includes(value.toLowerCase())
       );
     } else {
       this.filteredUserAccessibleDatasets = [...this.userAccessibleDatasets];
@@ -211,7 +211,7 @@ export class ResultExportationComponent implements OnInit {
 
   onClickExportResult(destination: "dataset" | "local", dataset: DashboardDataset = {} as DashboardDataset) {
     const datasetIds =
-      destination === "dataset" ? [dataset.dataset.did].filter((id): id is number => id !== undefined) : [];
+      destination === "dataset" ? [dataset.asset.aid].filter((id): id is number => id !== undefined) : [];
     this.workflowResultExportService.exportWorkflowExecutionResult(
       this.exportType,
       this.workflowName,
@@ -241,7 +241,7 @@ export class ResultExportationComponent implements OnInit {
       if (result) {
         this.userAccessibleDatasets.unshift(result);
         this.filteredUserAccessibleDatasets = [...this.userAccessibleDatasets];
-        this.inputDatasetName = result.dataset.name;
+        this.inputDatasetName = result.asset.name;
       }
     });
   }

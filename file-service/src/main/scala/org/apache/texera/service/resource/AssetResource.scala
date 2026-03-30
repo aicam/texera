@@ -24,30 +24,31 @@ import jakarta.annotation.security.RolesAllowed
 import jakarta.ws.rs._
 import jakarta.ws.rs.core._
 import org.apache.texera.amber.config.StorageConfig
-import org.apache.texera.amber.core.storage.model.OnDataset
+import org.apache.texera.amber.core.storage.model.OnAsset
 import org.apache.texera.amber.core.storage.util.LakeFSStorageClient
 import org.apache.texera.amber.core.storage.{DocumentFactory, FileResolver}
 import org.apache.texera.auth.SessionUser
 import org.apache.texera.dao.SqlServer
 import org.apache.texera.dao.SqlServer.withTransaction
 import org.apache.texera.dao.jooq.generated.enums.PrivilegeEnum
-import org.apache.texera.dao.jooq.generated.tables.Dataset.DATASET
-import org.apache.texera.dao.jooq.generated.tables.DatasetUserAccess.DATASET_USER_ACCESS
-import org.apache.texera.dao.jooq.generated.tables.DatasetVersion.DATASET_VERSION
+import org.apache.texera.dao.jooq.generated.enums.AssetTypeEnum
+import org.apache.texera.dao.jooq.generated.tables.Asset.ASSET
+import org.apache.texera.dao.jooq.generated.tables.AssetUserAccess.ASSET_USER_ACCESS
+import org.apache.texera.dao.jooq.generated.tables.AssetVersion.ASSET_VERSION
 import org.apache.texera.dao.jooq.generated.tables.User.USER
 import org.apache.texera.dao.jooq.generated.tables.daos.{
-  DatasetDao,
-  DatasetUserAccessDao,
-  DatasetVersionDao
+  AssetDao,
+  AssetUserAccessDao,
+  AssetVersionDao
 }
 import org.apache.texera.dao.jooq.generated.tables.pojos.{
-  Dataset,
-  DatasetUserAccess,
-  DatasetVersion
+  Asset,
+  AssetUserAccess,
+  AssetVersion
 }
-import org.apache.texera.service.`type`.DatasetFileNode
-import org.apache.texera.service.resource.DatasetAccessResource._
-import org.apache.texera.service.resource.DatasetResource.{context, _}
+import org.apache.texera.service.`type`.AssetFileNode
+import org.apache.texera.service.resource.AssetAccessResource._
+import org.apache.texera.service.resource.AssetResource.{context, _}
 import org.apache.texera.service.util.S3StorageClient
 import org.apache.texera.service.util.S3StorageClient.{
   MAXIMUM_NUM_OF_MULTIPART_S3_PARTS,
@@ -68,19 +69,19 @@ import java.util.zip.{ZipEntry, ZipOutputStream}
 import scala.collection.mutable.ListBuffer
 import scala.jdk.CollectionConverters._
 import scala.jdk.OptionConverters._
-import org.apache.texera.dao.jooq.generated.tables.DatasetUploadSession.DATASET_UPLOAD_SESSION
-import org.apache.texera.dao.jooq.generated.tables.DatasetUploadSessionPart.DATASET_UPLOAD_SESSION_PART
+import org.apache.texera.dao.jooq.generated.tables.AssetUploadSession.ASSET_UPLOAD_SESSION
+import org.apache.texera.dao.jooq.generated.tables.AssetUploadSessionPart.ASSET_UPLOAD_SESSION_PART
 import org.jooq.exception.DataAccessException
 import software.amazon.awssdk.services.s3.model.UploadPartResponse
 import org.apache.commons.io.FilenameUtils
 import org.apache.texera.service.util.LakeFSExceptionHandler.withLakeFSErrorHandling
-import org.apache.texera.dao.jooq.generated.tables.records.DatasetUploadSessionRecord
+import org.apache.texera.dao.jooq.generated.tables.records.AssetUploadSessionRecord
 
 import java.sql.SQLException
 import java.time.OffsetDateTime
 import scala.util.Try
 
-object DatasetResource {
+object AssetResource {
 
   private def context =
     SqlServer
@@ -98,15 +99,25 @@ object DatasetResource {
   }
 
   /**
-    * Helper function to get the dataset from DB using did
+    * Maps an AssetTypeEnum to the resource type prefix used in logical paths.
     */
-  private def getDatasetByID(ctx: DSLContext, did: Integer): Dataset = {
-    val datasetDao = new DatasetDao(ctx.configuration())
-    val dataset = datasetDao.fetchOneByDid(did)
-    if (dataset == null) {
-      throw new NotFoundException(f"Dataset $did not found")
+  def resourceTypePrefix(assetType: AssetTypeEnum): String = {
+    assetType match {
+      case AssetTypeEnum.dataset => "datasets"
+      case AssetTypeEnum.model   => "models"
     }
-    dataset
+  }
+
+  /**
+    * Helper function to get the asset from DB using aid
+    */
+  private def getAssetByID(ctx: DSLContext, aid: Integer): Asset = {
+    val assetDao = new AssetDao(ctx.configuration())
+    val asset = assetDao.fetchOneByAid(aid)
+    if (asset == null) {
+      throw new NotFoundException(f"Asset $aid not found")
+    }
+    asset
   }
 
   /**
@@ -131,33 +142,33 @@ object DatasetResource {
   }
 
   /**
-    * Helper function to get the dataset version from DB using dvid
+    * Helper function to get the asset version from DB using avid
     */
-  private def getDatasetVersionByID(
+  private def getAssetVersionByID(
       ctx: DSLContext,
-      dvid: Integer
-  ): DatasetVersion = {
-    val datasetVersionDao = new DatasetVersionDao(ctx.configuration())
-    val version = datasetVersionDao.fetchOneByDvid(dvid)
+      avid: Integer
+  ): AssetVersion = {
+    val assetVersionDao = new AssetVersionDao(ctx.configuration())
+    val version = assetVersionDao.fetchOneByAvid(avid)
     if (version == null) {
-      throw new NotFoundException("Dataset Version not found")
+      throw new NotFoundException("Asset Version not found")
     }
     version
   }
 
   /**
-    * Helper function to get the latest dataset version from the DB
+    * Helper function to get the latest asset version from the DB
     */
-  private def getLatestDatasetVersion(
+  private def getLatestAssetVersion(
       ctx: DSLContext,
-      did: Integer
-  ): Option[DatasetVersion] = {
+      aid: Integer
+  ): Option[AssetVersion] = {
     ctx
-      .selectFrom(DATASET_VERSION)
-      .where(DATASET_VERSION.DID.eq(did))
-      .orderBy(DATASET_VERSION.CREATION_TIME.desc())
+      .selectFrom(ASSET_VERSION)
+      .where(ASSET_VERSION.AID.eq(aid))
+      .orderBy(ASSET_VERSION.CREATION_TIME.desc())
       .limit(1)
-      .fetchOptionalInto(classOf[DatasetVersion])
+      .fetchOptionalInto(classOf[AssetVersion])
       .toScala
   }
 
@@ -180,24 +191,25 @@ object DatasetResource {
     normalized
   }
 
-  case class DashboardDataset(
-      dataset: Dataset,
+  case class DashboardAsset(
+      asset: Asset,
       ownerEmail: String,
       accessPrivilege: EnumType,
       isOwner: Boolean,
       size: Long
   )
 
-  case class DashboardDatasetVersion(
-      datasetVersion: DatasetVersion,
-      fileNodes: List[DatasetFileNode]
+  case class DashboardAssetVersion(
+      assetVersion: AssetVersion,
+      fileNodes: List[AssetFileNode]
   )
 
-  case class CreateDatasetRequest(
-      datasetName: String,
-      datasetDescription: String,
-      isDatasetPublic: Boolean,
-      isDatasetDownloadable: Boolean
+  case class CreateAssetRequest(
+      assetName: String,
+      assetDescription: String,
+      assetType: AssetTypeEnum,
+      isAssetPublic: Boolean,
+      isAssetDownloadable: Boolean
   )
 
   case class Diff(
@@ -207,10 +219,10 @@ object DatasetResource {
       sizeBytes: Option[Long] // Size of the changed file (None for directories)
   )
 
-  case class DatasetDescriptionModification(did: Integer, description: String)
+  case class AssetDescriptionModification(aid: Integer, description: String)
 
-  case class DatasetVersionRootFileNodesResponse(
-      fileNodes: List[DatasetFileNode],
+  case class AssetVersionRootFileNodesResponse(
+      fileNodes: List[AssetFileNode],
       size: Long
   )
 
@@ -218,43 +230,43 @@ object DatasetResource {
 }
 
 @Produces(Array(MediaType.APPLICATION_JSON, "image/jpeg", "application/pdf"))
-@Path("/dataset")
-class DatasetResource {
-  private val ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE = "User has no access to this dataset"
-  private val ERR_DATASET_VERSION_NOT_FOUND_MESSAGE = "The version of the dataset not found"
+@Path("/asset")
+class AssetResource {
+  private val ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE = "User has no access to this asset"
+  private val ERR_ASSET_VERSION_NOT_FOUND_MESSAGE = "The version of the asset not found"
   private val EXPIRATION_MINUTES = 5
 
   private val COVER_IMAGE_SIZE_LIMIT_BYTES: Long = 10 * 1024 * 1024 // 10 MB
   private val ALLOWED_IMAGE_EXTENSIONS: Set[String] = Set(".jpg", ".jpeg", ".png", ".gif", ".webp")
 
   /**
-    * Helper function to get the dataset from DB with additional information including user access privilege and owner email
+    * Helper function to get the asset from DB with additional information including user access privilege and owner email
     */
-  private def getDashboardDataset(
+  private def getDashboardAsset(
       ctx: DSLContext,
-      did: Integer,
+      aid: Integer,
       requesterUid: Option[Integer]
-  ): DashboardDataset = {
-    val targetDataset = getDatasetByID(ctx, did)
+  ): DashboardAsset = {
+    val targetAsset = getAssetByID(ctx, aid)
 
-    if (requesterUid.isEmpty && !targetDataset.getIsPublic) {
-      throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
-    } else if (requesterUid.exists(uid => !userHasReadAccess(ctx, did, uid))) {
-      throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
+    if (requesterUid.isEmpty && !targetAsset.getIsPublic) {
+      throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
+    } else if (requesterUid.exists(uid => !userHasReadAccess(ctx, aid, uid))) {
+      throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
     }
 
     val userAccessPrivilege = requesterUid
-      .map(uid => getDatasetUserAccessPrivilege(ctx, did, uid))
+      .map(uid => getAssetUserAccessPrivilege(ctx, aid, uid))
       .getOrElse(PrivilegeEnum.READ)
 
-    val isOwner = requesterUid.contains(targetDataset.getOwnerUid)
+    val isOwner = requesterUid.contains(targetAsset.getOwnerUid)
 
-    DashboardDataset(
-      targetDataset,
-      getOwner(ctx, did).getEmail,
+    DashboardAsset(
+      targetAsset,
+      getOwner(ctx, aid).getEmail,
       userAccessPrivilege,
       isOwner,
-      LakeFSStorageClient.retrieveRepositorySize(targetDataset.getRepositoryName)
+      LakeFSStorageClient.retrieveRepositorySize(targetAsset.getRepositoryName)
     )
   }
 
@@ -262,81 +274,82 @@ class DatasetResource {
   @RolesAllowed(Array("REGULAR", "ADMIN"))
   @Path("/create")
   @Consumes(Array(MediaType.APPLICATION_JSON))
-  def createDataset(
-      request: CreateDatasetRequest,
+  def createAsset(
+      request: CreateAssetRequest,
       @Auth user: SessionUser
-  ): DashboardDataset = {
+  ): DashboardAsset = {
 
     withTransaction(context) { ctx =>
       val uid = user.getUid
-      val datasetUserAccessDao: DatasetUserAccessDao = new DatasetUserAccessDao(ctx.configuration())
+      val assetUserAccessDao: AssetUserAccessDao = new AssetUserAccessDao(ctx.configuration())
 
-      val datasetName = request.datasetName
-      val datasetDescription = request.datasetDescription
-      val isDatasetPublic = request.isDatasetPublic
-      val isDatasetDownloadable = request.isDatasetDownloadable
+      val assetName = request.assetName
+      val assetDescription = request.assetDescription
+      val isAssetPublic = request.isAssetPublic
+      val isAssetDownloadable = request.isAssetDownloadable
 
-      // validate dataset name
+      // validate asset name
       try {
-        validateDatasetName(datasetName)
+        validateAssetName(assetName)
       } catch {
         case e: IllegalArgumentException =>
           throw new BadRequestException(e.getMessage)
       }
 
-      // Check if a dataset with the same name already exists
-      val existingDatasets = context
-        .selectFrom(DATASET)
-        .where(DATASET.OWNER_UID.eq(uid))
-        .and(DATASET.NAME.eq(datasetName))
+      // Check if an asset with the same name already exists
+      val existingAssets = context
+        .selectFrom(ASSET)
+        .where(ASSET.OWNER_UID.eq(uid))
+        .and(ASSET.NAME.eq(assetName))
         .fetch()
-      if (!existingDatasets.isEmpty) {
-        throw new BadRequestException("Dataset with the same name already exists")
+      if (!existingAssets.isEmpty) {
+        throw new BadRequestException("Asset with the same name already exists")
       }
 
-      // insert the dataset into the database
-      val dataset = new Dataset()
-      dataset.setName(datasetName)
-      dataset.setDescription(datasetDescription)
-      dataset.setIsPublic(isDatasetPublic)
-      dataset.setIsDownloadable(isDatasetDownloadable)
-      dataset.setOwnerUid(uid)
+      // insert the asset into the database
+      val asset = new Asset()
+      asset.setName(assetName)
+      asset.setDescription(assetDescription)
+      asset.setType(request.assetType)
+      asset.setIsPublic(isAssetPublic)
+      asset.setIsDownloadable(isAssetDownloadable)
+      asset.setOwnerUid(uid)
 
-      // insert record and get created dataset with did
-      val createdDataset = ctx
-        .insertInto(DATASET)
-        .set(ctx.newRecord(DATASET, dataset))
+      // insert record and get created asset with aid
+      val createdAsset = ctx
+        .insertInto(ASSET)
+        .set(ctx.newRecord(ASSET, asset))
         .returning()
         .fetchOne()
 
       // Initialize the repository in LakeFS
-      val repositoryName = s"dataset-${createdDataset.getDid}"
+      val repositoryName = s"asset-${createdAsset.getAid}"
       try {
         LakeFSStorageClient.initRepo(repositoryName)
       } catch {
         case e: Exception =>
           ctx
-            .deleteFrom(DATASET)
-            .where(DATASET.DID.eq(createdDataset.getDid))
+            .deleteFrom(ASSET)
+            .where(ASSET.AID.eq(createdAsset.getAid))
             .execute()
           throw new WebApplicationException(
-            s"Failed to create the dataset: ${e.getMessage}"
+            s"Failed to create the asset: ${e.getMessage}"
           )
       }
 
-      // update repository name of the created dataset
-      createdDataset.setRepositoryName(repositoryName)
-      createdDataset.update()
+      // update repository name of the created asset
+      createdAsset.setRepositoryName(repositoryName)
+      createdAsset.update()
 
-      // Insert the requester as the WRITE access user for this dataset
-      val datasetUserAccess = new DatasetUserAccess()
-      datasetUserAccess.setDid(createdDataset.getDid)
-      datasetUserAccess.setUid(uid)
-      datasetUserAccess.setPrivilege(PrivilegeEnum.WRITE)
-      datasetUserAccessDao.insert(datasetUserAccess)
+      // Insert the requester as the WRITE access user for this asset
+      val assetUserAccess = new AssetUserAccess()
+      assetUserAccess.setAid(createdAsset.getAid)
+      assetUserAccess.setUid(uid)
+      assetUserAccess.setPrivilege(PrivilegeEnum.WRITE)
+      assetUserAccessDao.insert(assetUserAccess)
 
-      DashboardDataset(
-        createdDataset.into(classOf[Dataset]),
+      DashboardAsset(
+        createdAsset.into(classOf[Asset]),
         user.getEmail,
         PrivilegeEnum.WRITE,
         isOwner = true,
@@ -347,22 +360,22 @@ class DatasetResource {
 
   @POST
   @RolesAllowed(Array("REGULAR", "ADMIN"))
-  @Path("/{did}/version/create")
+  @Path("/{aid}/version/create")
   @Consumes(Array(MediaType.TEXT_PLAIN))
-  def createDatasetVersion(
+  def createAssetVersion(
       versionName: String,
-      @PathParam("did") did: Integer,
+      @PathParam("aid") aid: Integer,
       @Auth user: SessionUser
-  ): DashboardDatasetVersion = {
+  ): DashboardAssetVersion = {
     val uid = user.getUid
     withTransaction(context) { ctx =>
-      if (!userHasWriteAccess(ctx, did, uid)) {
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
+      if (!userHasWriteAccess(ctx, aid, uid)) {
+        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
       }
 
-      val dataset = getDatasetByID(ctx, did)
-      val datasetName = dataset.getName
-      val repositoryName = dataset.getRepositoryName
+      val asset = getAssetByID(ctx, aid)
+      val repoName = asset.getName
+      val repositoryName = asset.getRepositoryName
 
       // Check if there are any changes in LakeFS before creating a new version
       val diffs = withLakeFSErrorHandling {
@@ -371,7 +384,7 @@ class DatasetResource {
 
       if (diffs.isEmpty) {
         throw new WebApplicationException(
-          "No changes detected in dataset. Version creation aborted.",
+          "No changes detected in asset. Version creation aborted.",
           Response.Status.BAD_REQUEST
         )
       }
@@ -379,8 +392,8 @@ class DatasetResource {
       // Generate a new version name
       val versionCount = ctx
         .selectCount()
-        .from(DATASET_VERSION)
-        .where(DATASET_VERSION.DID.eq(did))
+        .from(ASSET_VERSION)
+        .where(ASSET_VERSION.AID.eq(aid))
         .fetchOne(0, classOf[Int])
 
       val sanitizedVersionName = Option(versionName).filter(_.nonEmpty).getOrElse("")
@@ -395,7 +408,7 @@ class DatasetResource {
         LakeFSStorageClient.createCommit(
           repoName = repositoryName,
           branch = "main",
-          commitMessage = s"Created dataset version: $newVersionName"
+          commitMessage = s"Created asset version: $newVersionName"
         )
       }
 
@@ -406,30 +419,30 @@ class DatasetResource {
         )
       }
 
-      // Create a new dataset version entry in the database
-      val datasetVersion = new DatasetVersion()
-      datasetVersion.setDid(did)
-      datasetVersion.setCreatorUid(uid)
-      datasetVersion.setName(newVersionName)
-      datasetVersion.setVersionHash(commit.getId) // Store LakeFS version hash
+      // Create a new asset version entry in the database
+      val assetVersion = new AssetVersion()
+      assetVersion.setAid(aid)
+      assetVersion.setCreatorUid(uid)
+      assetVersion.setName(newVersionName)
+      assetVersion.setVersionHash(commit.getId) // Store LakeFS version hash
 
       val insertedVersion = ctx
-        .insertInto(DATASET_VERSION)
-        .set(ctx.newRecord(DATASET_VERSION, datasetVersion))
+        .insertInto(ASSET_VERSION)
+        .set(ctx.newRecord(ASSET_VERSION, assetVersion))
         .returning()
         .fetchOne()
-        .into(classOf[DatasetVersion])
+        .into(classOf[AssetVersion])
 
       // Retrieve committed file structure
       val fileNodes = withLakeFSErrorHandling {
         LakeFSStorageClient.retrieveObjectsOfVersion(repositoryName, commit.getId)
       }
 
-      DashboardDatasetVersion(
+      DashboardAssetVersion(
         insertedVersion,
-        DatasetFileNode
+        AssetFileNode
           .fromLakeFSRepositoryCommittedObjects(
-            Map((user.getEmail, datasetName, newVersionName) -> fileNodes)
+            Map((resourceTypePrefix(asset.getType), user.getEmail, repoName, newVersionName) -> fileNodes)
           )
       )
     }
@@ -437,34 +450,34 @@ class DatasetResource {
 
   @DELETE
   @RolesAllowed(Array("REGULAR", "ADMIN"))
-  @Path("/{did}")
-  def deleteDataset(@PathParam("did") did: Integer, @Auth user: SessionUser): Response = {
+  @Path("/{aid}")
+  def deleteAsset(@PathParam("aid") aid: Integer, @Auth user: SessionUser): Response = {
     val uid = user.getUid
     withTransaction(context) { ctx =>
-      val datasetDao = new DatasetDao(ctx.configuration())
-      val dataset = getDatasetByID(ctx, did)
-      if (!userOwnDataset(ctx, dataset.getDid, uid)) {
-        // throw the exception that user has no access to certain dataset
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
+      val assetDao = new AssetDao(ctx.configuration())
+      val asset = getAssetByID(ctx, aid)
+      if (!userOwnAsset(ctx, asset.getAid, uid)) {
+        // throw the exception that user has no access to certain asset
+        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
       }
       try {
-        LakeFSStorageClient.deleteRepo(dataset.getRepositoryName)
+        LakeFSStorageClient.deleteRepo(asset.getRepositoryName)
       } catch {
         case e: Exception =>
           throw new WebApplicationException(
-            s"Failed to delete a repository in LakeFS: ${e.getMessage}",
+            s"Failed to delete an asset in LakeFS: ${e.getMessage}",
             e
           )
       }
       // delete the directory on S3
       if (
-        S3StorageClient.directoryExists(StorageConfig.lakefsBucketName, dataset.getRepositoryName)
+        S3StorageClient.directoryExists(StorageConfig.lakefsBucketName, asset.getRepositoryName)
       ) {
-        S3StorageClient.deleteDirectory(StorageConfig.lakefsBucketName, dataset.getRepositoryName)
+        S3StorageClient.deleteDirectory(StorageConfig.lakefsBucketName, asset.getRepositoryName)
       }
 
-      // delete the dataset from the DB
-      datasetDao.deleteById(dataset.getDid)
+      // delete the asset from the DB
+      assetDao.deleteById(asset.getAid)
 
       Response.ok().build()
     }
@@ -475,30 +488,30 @@ class DatasetResource {
   @Produces(Array(MediaType.APPLICATION_JSON))
   @RolesAllowed(Array("REGULAR", "ADMIN"))
   @Path("/update/description")
-  def updateDatasetDescription(
-      modificator: DatasetDescriptionModification,
+  def updateAssetDescription(
+      modificator: AssetDescriptionModification,
       @Auth sessionUser: SessionUser
   ): Response = {
     withTransaction(context) { ctx =>
       val uid = sessionUser.getUid
-      val datasetDao = new DatasetDao(ctx.configuration())
-      val dataset = getDatasetByID(ctx, modificator.did)
-      if (!userHasWriteAccess(ctx, modificator.did, uid)) {
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
+      val assetDao = new AssetDao(ctx.configuration())
+      val asset = getAssetByID(ctx, modificator.aid)
+      if (!userHasWriteAccess(ctx, modificator.aid, uid)) {
+        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
       }
 
-      dataset.setDescription(modificator.description)
-      datasetDao.update(dataset)
+      asset.setDescription(modificator.description)
+      assetDao.update(asset)
       Response.ok().build()
     }
   }
 
   @POST
   @RolesAllowed(Array("REGULAR", "ADMIN"))
-  @Path("/{did}/upload")
+  @Path("/{aid}/upload")
   @Consumes(Array(MediaType.APPLICATION_OCTET_STREAM))
-  def uploadOneFileToDataset(
-      @PathParam("did") did: Integer,
+  def uploadOneFileToAsset(
+      @PathParam("aid") aid: Integer,
       @QueryParam("filePath") encodedFilePath: String,
       @QueryParam("message") message: String,
       fileStream: InputStream,
@@ -514,11 +527,11 @@ class DatasetResource {
 
     try {
       withTransaction(context) { ctx =>
-        if (!userHasWriteAccess(ctx, did, uid))
-          throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
+        if (!userHasWriteAccess(ctx, aid, uid))
+          throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
 
-        val dataset = getDatasetByID(ctx, did)
-        repoName = dataset.getRepositoryName
+        val asset = getAssetByID(ctx, aid)
+        repoName = asset.getRepositoryName
         filePath = URLDecoder.decode(encodedFilePath, StandardCharsets.UTF_8.name)
 
         // ---------- decide part-size & number-of-parts ----------
@@ -601,7 +614,7 @@ class DatasetResource {
           )
         }
         throw new WebApplicationException(
-          s"Failed to upload file to dataset: ${e.getMessage}",
+          s"Failed to upload file to asset: ${e.getMessage}",
           e
         )
     }
@@ -655,23 +668,23 @@ class DatasetResource {
 
   @DELETE
   @RolesAllowed(Array("REGULAR", "ADMIN"))
-  @Path("/{did}/file")
+  @Path("/{aid}/file")
   @Consumes(Array(MediaType.APPLICATION_JSON))
-  def deleteDatasetFile(
-      @PathParam("did") did: Integer,
+  def deleteAssetFile(
+      @PathParam("aid") aid: Integer,
       @QueryParam("filePath") encodedFilePath: String,
       @Auth user: SessionUser
   ): Response = {
     val uid = user.getUid
     withTransaction(context) { ctx =>
-      if (!userHasWriteAccess(ctx, did, uid)) {
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
+      if (!userHasWriteAccess(ctx, aid, uid)) {
+        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
       }
-      val repositoryName = getDatasetByID(ctx, did).getRepositoryName
+      val repositoryName = getAssetByID(ctx, aid).getRepositoryName
 
       // Decode the file path
       val filePath = URLDecoder.decode(encodedFilePath, StandardCharsets.UTF_8.name())
-      // Try to initialize the repository in LakeFS
+      // Try to delete the file in LakeFS
       try {
         LakeFSStorageClient.deleteObject(repositoryName, filePath)
       } catch {
@@ -692,7 +705,7 @@ class DatasetResource {
   def multipartUpload(
       @QueryParam("type") operationType: String,
       @QueryParam("ownerEmail") ownerEmail: String,
-      @QueryParam("datasetName") datasetName: String,
+      @QueryParam("name") assetName: String,
       @QueryParam("filePath") filePath: String,
       @QueryParam("fileSizeBytes") fileSizeBytes: Optional[java.lang.Long],
       @QueryParam("partSizeBytes") partSizeBytes: Optional[java.lang.Long],
@@ -700,14 +713,14 @@ class DatasetResource {
       @Auth user: SessionUser
   ): Response = {
     val uid = user.getUid
-    val dataset: Dataset = getDatasetBy(ownerEmail, datasetName)
+    val asset: Asset = getAssetBy(ownerEmail, assetName)
 
     operationType.toLowerCase match {
-      case "list" => listMultipartUploads(dataset.getDid, uid)
+      case "list" => listMultipartUploads(asset.getAid, uid)
       case "init" =>
-        initMultipartUpload(dataset.getDid, filePath, fileSizeBytes, partSizeBytes, restart, uid)
-      case "finish" => finishMultipartUpload(dataset.getDid, filePath, uid)
-      case "abort"  => abortMultipartUpload(dataset.getDid, filePath, uid)
+        initMultipartUpload(asset.getAid, filePath, fileSizeBytes, partSizeBytes, restart, uid)
+      case "finish" => finishMultipartUpload(asset.getAid, filePath, uid)
+      case "abort"  => abortMultipartUpload(asset.getAid, filePath, uid)
       case _ =>
         throw new BadRequestException("Invalid type parameter. Use 'init', 'finish', or 'abort'.")
     }
@@ -718,8 +731,8 @@ class DatasetResource {
   @Consumes(Array(MediaType.APPLICATION_OCTET_STREAM))
   @Path("/multipart-upload/part")
   def uploadPart(
-      @QueryParam("ownerEmail") datasetOwnerEmail: String,
-      @QueryParam("datasetName") datasetName: String,
+      @QueryParam("ownerEmail") assetOwnerEmail: String,
+      @QueryParam("name") assetName: String,
       @QueryParam("filePath") encodedFilePath: String,
       @QueryParam("partNumber") partNumber: Int,
       partStream: InputStream,
@@ -728,8 +741,8 @@ class DatasetResource {
   ): Response = {
 
     val uid = user.getUid
-    val dataset: Dataset = getDatasetBy(datasetOwnerEmail, datasetName)
-    val did = dataset.getDid
+    val asset: Asset = getAssetBy(assetOwnerEmail, assetName)
+    val aid = asset.getAid
 
     if (encodedFilePath == null || encodedFilePath.isEmpty)
       throw new BadRequestException("filePath is required")
@@ -750,16 +763,16 @@ class DatasetResource {
         }
 
     withTransaction(context) { ctx =>
-      if (!userHasWriteAccess(ctx, did, uid))
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
+      if (!userHasWriteAccess(ctx, aid, uid))
+        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
 
       val session = ctx
-        .selectFrom(DATASET_UPLOAD_SESSION)
+        .selectFrom(ASSET_UPLOAD_SESSION)
         .where(
-          DATASET_UPLOAD_SESSION.UID
+          ASSET_UPLOAD_SESSION.UID
             .eq(uid)
-            .and(DATASET_UPLOAD_SESSION.DID.eq(did))
-            .and(DATASET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
+            .and(ASSET_UPLOAD_SESSION.AID.eq(aid))
+            .and(ASSET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
         )
         .fetchOne()
 
@@ -858,11 +871,11 @@ class DatasetResource {
       val partRow =
         try {
           ctx
-            .selectFrom(DATASET_UPLOAD_SESSION_PART)
+            .selectFrom(ASSET_UPLOAD_SESSION_PART)
             .where(
-              DATASET_UPLOAD_SESSION_PART.UPLOAD_ID
+              ASSET_UPLOAD_SESSION_PART.UPLOAD_ID
                 .eq(uploadId)
-                .and(DATASET_UPLOAD_SESSION_PART.PART_NUMBER.eq(partNumber))
+                .and(ASSET_UPLOAD_SESSION_PART.PART_NUMBER.eq(partNumber))
             )
             .forUpdate()
             .noWait()
@@ -909,12 +922,12 @@ class DatasetResource {
         }
 
         ctx
-          .update(DATASET_UPLOAD_SESSION_PART)
-          .set(DATASET_UPLOAD_SESSION_PART.ETAG, etagClean)
+          .update(ASSET_UPLOAD_SESSION_PART)
+          .set(ASSET_UPLOAD_SESSION_PART.ETAG, etagClean)
           .where(
-            DATASET_UPLOAD_SESSION_PART.UPLOAD_ID
+            ASSET_UPLOAD_SESSION_PART.UPLOAD_ID
               .eq(uploadId)
-              .and(DATASET_UPLOAD_SESSION_PART.PART_NUMBER.eq(partNumber))
+              .and(ASSET_UPLOAD_SESSION_PART.PART_NUMBER.eq(partNumber))
           )
           .execute()
       }
@@ -924,70 +937,70 @@ class DatasetResource {
 
   @POST
   @RolesAllowed(Array("REGULAR", "ADMIN"))
-  @Path("/{did}/update/publicity")
-  def toggleDatasetPublicity(
-      @PathParam("did") did: Integer,
+  @Path("/{aid}/update/publicity")
+  def toggleAssetPublicity(
+      @PathParam("aid") aid: Integer,
       @Auth sessionUser: SessionUser
   ): Response = {
     withTransaction(context) { ctx =>
-      val datasetDao = new DatasetDao(ctx.configuration())
+      val assetDao = new AssetDao(ctx.configuration())
       val uid = sessionUser.getUid
 
-      if (!userHasWriteAccess(ctx, did, uid)) {
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
+      if (!userHasWriteAccess(ctx, aid, uid)) {
+        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
       }
 
-      val existedDataset = getDatasetByID(ctx, did)
-      val newPublicStatus = !existedDataset.getIsPublic
-      existedDataset.setIsPublic(newPublicStatus)
+      val existedAsset = getAssetByID(ctx, aid)
+      val newPublicStatus = !existedAsset.getIsPublic
+      existedAsset.setIsPublic(newPublicStatus)
 
-      datasetDao.update(existedDataset)
+      assetDao.update(existedAsset)
       Response.ok().build()
     }
   }
 
   @POST
   @RolesAllowed(Array("REGULAR", "ADMIN"))
-  @Path("/{did}/update/downloadable")
-  def toggleDatasetDownloadable(
-      @PathParam("did") did: Integer,
+  @Path("/{aid}/update/downloadable")
+  def toggleAssetDownloadable(
+      @PathParam("aid") aid: Integer,
       @Auth sessionUser: SessionUser
   ): Response = {
     withTransaction(context) { ctx =>
-      val datasetDao = new DatasetDao(ctx.configuration())
+      val assetDao = new AssetDao(ctx.configuration())
       val uid = sessionUser.getUid
 
-      if (!userOwnDataset(ctx, did, uid)) {
-        throw new ForbiddenException("Only dataset owners can modify download permissions")
+      if (!userOwnAsset(ctx, aid, uid)) {
+        throw new ForbiddenException("Only asset owners can modify download permissions")
       }
 
-      val existedDataset = getDatasetByID(ctx, did)
-      val newDownloadableStatus = !existedDataset.getIsDownloadable
+      val existedAsset = getAssetByID(ctx, aid)
+      val newDownloadableStatus = !existedAsset.getIsDownloadable
 
-      existedDataset.setIsDownloadable(newDownloadableStatus)
+      existedAsset.setIsDownloadable(newDownloadableStatus)
 
-      datasetDao.update(existedDataset)
+      assetDao.update(existedAsset)
       Response.ok().build()
     }
   }
 
   @GET
   @RolesAllowed(Array("REGULAR", "ADMIN"))
-  @Path("/{did}/diff")
-  def getDatasetDiff(
-      @PathParam("did") did: Integer,
+  @Path("/{aid}/diff")
+  def getAssetDiff(
+      @PathParam("aid") aid: Integer,
       @Auth user: SessionUser
   ): List[Diff] = {
     val uid = user.getUid
     withTransaction(context) { ctx =>
-      if (!userHasReadAccess(ctx, did, uid)) {
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
+      if (!userHasReadAccess(ctx, aid, uid)) {
+        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
       }
 
       // Retrieve staged (uncommitted) changes from LakeFS
-      val dataset = getDatasetByID(ctx, did)
+      val asset = getAssetByID(ctx, aid)
       val lakefsDiffs = withLakeFSErrorHandling {
-        LakeFSStorageClient.retrieveUncommittedObjects(dataset.getRepositoryName)
+        LakeFSStorageClient.retrieveUncommittedObjects(asset.getRepositoryName)
       }
 
       // Convert LakeFS Diff objects to our custom Diff case class
@@ -1004,19 +1017,19 @@ class DatasetResource {
 
   @PUT
   @RolesAllowed(Array("REGULAR", "ADMIN"))
-  @Path("/{did}/diff")
+  @Path("/{aid}/diff")
   @Consumes(Array(MediaType.APPLICATION_JSON))
-  def resetDatasetFileDiff(
-      @PathParam("did") did: Integer,
+  def resetAssetFileDiff(
+      @PathParam("aid") aid: Integer,
       @QueryParam("filePath") encodedFilePath: String,
       @Auth user: SessionUser
   ): Response = {
     val uid = user.getUid
     withTransaction(context) { ctx =>
-      if (!userHasWriteAccess(ctx, did, uid)) {
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
+      if (!userHasWriteAccess(ctx, aid, uid)) {
+        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
       }
-      val repositoryName = getDatasetByID(ctx, did).getRepositoryName
+      val repositoryName = getAssetByID(ctx, aid).getRepositoryName
 
       // Decode the file path
       val filePath = URLDecoder.decode(encodedFilePath, StandardCharsets.UTF_8.name())
@@ -1034,41 +1047,41 @@ class DatasetResource {
   }
 
   /**
-    * This method returns a list of DashboardDatasets objects that are accessible by current user.
+    * This method returns a list of DashboardAsset objects that are accessible by current user.
     *
     * @param user the session user
-    * @return list of user accessible DashboardDataset objects
+    * @return list of user accessible DashboardAsset objects
     */
   @GET
   @RolesAllowed(Array("REGULAR", "ADMIN"))
   @Path("/list")
-  def listDatasets(
+  def listAssets(
       @Auth user: SessionUser
-  ): List[DashboardDataset] = {
+  ): List[DashboardAsset] = {
     val uid = user.getUid
     withTransaction(context)(ctx => {
-      var accessibleDatasets: ListBuffer[DashboardDataset] = ListBuffer()
-      // first fetch all datasets user have explicit access to
-      accessibleDatasets = ListBuffer.from(
+      var accessibleAssets: ListBuffer[DashboardAsset] = ListBuffer()
+      // first fetch all assets user have explicit access to
+      accessibleAssets = ListBuffer.from(
         ctx
           .select()
           .from(
-            DATASET
-              .leftJoin(DATASET_USER_ACCESS)
-              .on(DATASET_USER_ACCESS.DID.eq(DATASET.DID))
+            ASSET
+              .leftJoin(ASSET_USER_ACCESS)
+              .on(ASSET_USER_ACCESS.AID.eq(ASSET.AID))
               .leftJoin(USER)
-              .on(USER.UID.eq(DATASET.OWNER_UID))
+              .on(USER.UID.eq(ASSET.OWNER_UID))
           )
-          .where(DATASET_USER_ACCESS.UID.eq(uid))
+          .where(ASSET_USER_ACCESS.UID.eq(uid))
           .fetch()
           .map(record => {
-            val dataset = record.into(DATASET).into(classOf[Dataset])
-            val datasetAccess = record.into(DATASET_USER_ACCESS).into(classOf[DatasetUserAccess])
+            val asset = record.into(ASSET).into(classOf[Asset])
+            val assetAccess = record.into(ASSET_USER_ACCESS).into(classOf[AssetUserAccess])
             val ownerEmail = record.into(USER).getEmail
-            DashboardDataset(
-              isOwner = dataset.getOwnerUid == uid,
-              dataset = dataset,
-              accessPrivilege = datasetAccess.getPrivilege,
+            DashboardAsset(
+              isOwner = asset.getOwnerUid == uid,
+              asset = asset,
+              accessPrivilege = assetAccess.getPrivilege,
               ownerEmail = ownerEmail,
               size = 0
             )
@@ -1076,104 +1089,106 @@ class DatasetResource {
           .asScala
       )
 
-      // then we fetch the public datasets and merge it as a part of the result if not exist
-      val publicDatasets = ctx
+      // then we fetch the public assets and merge it as a part of the result if not exist
+      val publicAssets = ctx
         .select()
         .from(
-          DATASET
+          ASSET
             .leftJoin(USER)
-            .on(USER.UID.eq(DATASET.OWNER_UID))
+            .on(USER.UID.eq(ASSET.OWNER_UID))
         )
-        .where(DATASET.IS_PUBLIC.eq(true))
+        .where(ASSET.IS_PUBLIC.eq(true))
         .fetch()
         .map(record => {
-          val dataset = record.into(DATASET).into(classOf[Dataset])
+          val asset = record.into(ASSET).into(classOf[Asset])
           val ownerEmail = record.into(USER).getEmail
-          DashboardDataset(
+          DashboardAsset(
             isOwner = false,
-            dataset = dataset,
+            asset = asset,
             accessPrivilege = PrivilegeEnum.READ,
             ownerEmail = ownerEmail,
-            size = LakeFSStorageClient.retrieveRepositorySize(dataset.getRepositoryName)
+            size = LakeFSStorageClient.retrieveRepositorySize(asset.getRepositoryName)
           )
         })
-      publicDatasets.forEach { publicDataset =>
-        if (!accessibleDatasets.exists(_.dataset.getDid == publicDataset.dataset.getDid)) {
-          val dashboardDataset = DashboardDataset(
+      publicAssets.forEach { publicAsset =>
+        if (!accessibleAssets.exists(_.asset.getAid == publicAsset.asset.getAid)) {
+          val dashboardAsset = DashboardAsset(
             isOwner = false,
-            dataset = publicDataset.dataset,
-            ownerEmail = publicDataset.ownerEmail,
+            asset = publicAsset.asset,
+            ownerEmail = publicAsset.ownerEmail,
             accessPrivilege = PrivilegeEnum.READ,
             size =
-              LakeFSStorageClient.retrieveRepositorySize(publicDataset.dataset.getRepositoryName)
+              LakeFSStorageClient.retrieveRepositorySize(publicAsset.asset.getRepositoryName)
           )
-          accessibleDatasets = accessibleDatasets :+ dashboardDataset
+          accessibleAssets = accessibleAssets :+ dashboardAsset
         }
       }
-      accessibleDatasets.toList
+      accessibleAssets.toList
     })
   }
 
   @GET
   @RolesAllowed(Array("REGULAR", "ADMIN"))
-  @Path("/{did}/version/list")
-  def getDatasetVersionList(
-      @PathParam("did") did: Integer,
+  @Path("/{aid}/version/list")
+  def getAssetVersionList(
+      @PathParam("aid") aid: Integer,
       @Auth user: SessionUser
-  ): List[DatasetVersion] = {
+  ): List[AssetVersion] = {
     val uid = user.getUid
     withTransaction(context)(ctx => {
-      val dataset = getDatasetByID(ctx, did)
-      if (!userHasReadAccess(ctx, dataset.getDid, uid)) {
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
+      val asset = getAssetByID(ctx, aid)
+      if (!userHasReadAccess(ctx, asset.getAid, uid)) {
+        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
       }
-      fetchDatasetVersions(ctx, dataset.getDid)
+      fetchAssetVersions(ctx, asset.getAid)
     })
   }
 
   @GET
   @Path("/{name}/publicVersion/list")
-  def getPublicDatasetVersionList(
-      @PathParam("name") did: Integer
-  ): List[DatasetVersion] = {
+  def getPublicAssetVersionList(
+      @PathParam("name") aid: Integer
+  ): List[AssetVersion] = {
     withTransaction(context)(ctx => {
-      if (!isDatasetPublic(ctx, did)) {
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
+      if (!isAssetPublic(ctx, aid)) {
+        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
       }
-      fetchDatasetVersions(ctx, did)
+      fetchAssetVersions(ctx, aid)
     })
   }
 
   @GET
   @RolesAllowed(Array("REGULAR", "ADMIN"))
-  @Path("/{did}/version/latest")
-  def retrieveLatestDatasetVersion(
-      @PathParam("did") did: Integer,
+  @Path("/{aid}/version/latest")
+  def retrieveLatestAssetVersion(
+      @PathParam("aid") aid: Integer,
       @Auth user: SessionUser
-  ): DashboardDatasetVersion = {
+  ): DashboardAssetVersion = {
     val uid = user.getUid
     withTransaction(context)(ctx => {
-      if (!userHasReadAccess(ctx, did, uid)) {
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
+      if (!userHasReadAccess(ctx, aid, uid)) {
+        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
       }
-      val dataset = getDatasetByID(ctx, did)
-      val latestVersion = getLatestDatasetVersion(ctx, did).getOrElse(
-        throw new NotFoundException(ERR_DATASET_VERSION_NOT_FOUND_MESSAGE)
+      val asset = getAssetByID(ctx, aid)
+      val latestVersion = getLatestAssetVersion(ctx, aid).getOrElse(
+        throw new NotFoundException(ERR_ASSET_VERSION_NOT_FOUND_MESSAGE)
       )
 
-      val ownerNode = DatasetFileNode
+      val resourceTypeNode = AssetFileNode
         .fromLakeFSRepositoryCommittedObjects(
           Map(
-            (user.getEmail, dataset.getName, latestVersion.getName) -> LakeFSStorageClient
-              .retrieveObjectsOfVersion(dataset.getRepositoryName, latestVersion.getVersionHash)
+            (resourceTypePrefix(asset.getType), user.getEmail, asset.getName, latestVersion.getName) -> LakeFSStorageClient
+              .retrieveObjectsOfVersion(asset.getRepositoryName, latestVersion.getVersionHash)
           )
         )
         .head
 
-      DashboardDatasetVersion(
+      val ownerNode = resourceTypeNode.children.get.head
+
+      DashboardAssetVersion(
         latestVersion,
         ownerNode.children.get
-          .find(_.getName == dataset.getName)
+          .find(_.getName == asset.getName)
           .head
           .children
           .get
@@ -1187,53 +1202,53 @@ class DatasetResource {
 
   @GET
   @RolesAllowed(Array("REGULAR", "ADMIN"))
-  @Path("/{did}/versionZip")
-  def getDatasetVersionZip(
-      @PathParam("did") did: Integer,
-      @QueryParam("dvid") dvid: Integer, // Dataset version ID, nullable
+  @Path("/{aid}/versionZip")
+  def getAssetVersionZip(
+      @PathParam("aid") aid: Integer,
+      @QueryParam("avid") avid: Integer, // Asset version ID, nullable
       @QueryParam("latest") latest: java.lang.Boolean, // Flag to get latest version, nullable
       @Auth user: SessionUser
   ): Response = {
 
     withTransaction(context) { ctx =>
-      if ((dvid != null && latest != null) || (dvid == null && latest == null)) {
-        throw new BadRequestException("Specify exactly one: dvid=<ID> OR latest=true")
+      if ((avid != null && latest != null) || (avid == null && latest == null)) {
+        throw new BadRequestException("Specify exactly one: avid=<ID> OR latest=true")
       }
 
       // Check read access and download permission
       val uid = user.getUid
-      if (!userHasReadAccess(ctx, did, uid)) {
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
+      if (!userHasReadAccess(ctx, aid, uid)) {
+        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
       }
 
-      // Retrieve dataset and check download permission
-      val dataset = getDatasetByID(ctx, did)
-      // Non-owners can download if dataset is downloadable and they have read access
-      if (!userOwnDataset(ctx, did, uid) && !dataset.getIsDownloadable) {
-        throw new ForbiddenException("Dataset download is not allowed")
+      // Retrieve asset and check download permission
+      val asset = getAssetByID(ctx, aid)
+      // Non-owners can download if asset is downloadable and they have read access
+      if (!userOwnAsset(ctx, aid, uid) && !asset.getIsDownloadable) {
+        throw new ForbiddenException("Asset download is not allowed")
       }
 
       // Determine which version to retrieve
-      val datasetVersion = if (dvid != null) {
-        getDatasetVersionByID(ctx, dvid)
+      val assetVersion = if (avid != null) {
+        getAssetVersionByID(ctx, avid)
       } else if (java.lang.Boolean.TRUE.equals(latest)) {
-        getLatestDatasetVersion(ctx, did).getOrElse(
-          throw new NotFoundException(ERR_DATASET_VERSION_NOT_FOUND_MESSAGE)
+        getLatestAssetVersion(ctx, aid).getOrElse(
+          throw new NotFoundException(ERR_ASSET_VERSION_NOT_FOUND_MESSAGE)
         )
       } else {
         throw new BadRequestException("Invalid parameters")
       }
 
-      // Retrieve dataset and version details
-      val datasetName = dataset.getName
-      val repositoryName = dataset.getRepositoryName
-      val versionHash = datasetVersion.getVersionHash
+      // Retrieve asset and version details
+      val repoName = asset.getName
+      val repositoryName = asset.getRepositoryName
+      val versionHash = assetVersion.getVersionHash
       val objects = LakeFSStorageClient.retrieveObjectsOfVersion(repositoryName, versionHash)
 
       if (objects.isEmpty) {
         return Response
           .status(Response.Status.NOT_FOUND)
-          .entity(s"No objects found in version $versionHash of repository $repositoryName")
+          .entity(s"No objects found in version $versionHash of asset $repositoryName")
           .build()
       }
 
@@ -1256,7 +1271,7 @@ class DatasetResource {
         }
       }
 
-      val zipFilename = s"""attachment; filename="$datasetName-${datasetVersion.getName}.zip""""
+      val zipFilename = s"""attachment; filename="$repoName-${assetVersion.getName}.zip""""
 
       Response
         .ok(streamingOutput, "application/zip")
@@ -1267,128 +1282,130 @@ class DatasetResource {
 
   @GET
   @RolesAllowed(Array("REGULAR", "ADMIN"))
-  @Path("/{did}/version/{dvid}/rootFileNodes")
-  def retrieveDatasetVersionRootFileNodes(
-      @PathParam("did") did: Integer,
-      @PathParam("dvid") dvid: Integer,
+  @Path("/{aid}/version/{avid}/rootFileNodes")
+  def retrieveAssetVersionRootFileNodes(
+      @PathParam("aid") aid: Integer,
+      @PathParam("avid") avid: Integer,
       @Auth user: SessionUser
-  ): DatasetVersionRootFileNodesResponse = {
+  ): AssetVersionRootFileNodesResponse = {
     val uid = user.getUid
-    withTransaction(context)(ctx => fetchDatasetVersionRootFileNodes(ctx, did, dvid, Some(uid)))
+    withTransaction(context)(ctx => fetchAssetVersionRootFileNodes(ctx, aid, avid, Some(uid)))
   }
 
   @GET
-  @Path("/{did}/publicVersion/{dvid}/rootFileNodes")
-  def retrievePublicDatasetVersionRootFileNodes(
-      @PathParam("did") did: Integer,
-      @PathParam("dvid") dvid: Integer
-  ): DatasetVersionRootFileNodesResponse = {
-    withTransaction(context)(ctx => fetchDatasetVersionRootFileNodes(ctx, did, dvid, None))
+  @Path("/{aid}/publicVersion/{avid}/rootFileNodes")
+  def retrievePublicAssetVersionRootFileNodes(
+      @PathParam("aid") aid: Integer,
+      @PathParam("avid") avid: Integer
+  ): AssetVersionRootFileNodesResponse = {
+    withTransaction(context)(ctx => fetchAssetVersionRootFileNodes(ctx, aid, avid, None))
   }
 
   @GET
   @RolesAllowed(Array("REGULAR", "ADMIN"))
-  @Path("/{did}")
-  def getDataset(
-      @PathParam("did") did: Integer,
+  @Path("/{aid}")
+  def getAsset(
+      @PathParam("aid") aid: Integer,
       @Auth user: SessionUser
-  ): DashboardDataset = {
+  ): DashboardAsset = {
     val uid = user.getUid
-    withTransaction(context)(ctx => getDashboardDataset(ctx, did, Some(uid)))
+    withTransaction(context)(ctx => getDashboardAsset(ctx, aid, Some(uid)))
   }
 
   @GET
-  @Path("/public/{did}")
-  def getPublicDataset(
-      @PathParam("did") did: Integer
-  ): DashboardDataset = {
-    withTransaction(context)(ctx => getDashboardDataset(ctx, did, None))
+  @Path("/public/{aid}")
+  def getPublicAsset(
+      @PathParam("aid") aid: Integer
+  ): DashboardAsset = {
+    withTransaction(context)(ctx => getDashboardAsset(ctx, aid, None))
   }
 
   /**
-    * This method returns all owner user names of the dataset that the user has access to
+    * This method returns all owner user names of the asset that the user has access to
     *
     * @return OwnerName[]
     */
   @GET
   @RolesAllowed(Array("REGULAR", "ADMIN"))
-  @Path("/user-dataset-owners")
+  @Path("/user-asset-owners")
   def retrieveOwners(@Auth user: SessionUser): util.List[String] = {
     context
       .selectDistinct(USER.EMAIL)
       .from(USER)
-      .join(DATASET)
-      .on(DATASET.OWNER_UID.eq(USER.UID))
-      .join(DATASET_USER_ACCESS)
-      .on(DATASET_USER_ACCESS.DID.eq(DATASET.DID))
-      .where(DATASET_USER_ACCESS.UID.eq(user.getUid))
+      .join(ASSET)
+      .on(ASSET.OWNER_UID.eq(USER.UID))
+      .join(ASSET_USER_ACCESS)
+      .on(ASSET_USER_ACCESS.AID.eq(ASSET.AID))
+      .where(ASSET_USER_ACCESS.UID.eq(user.getUid))
       .fetchInto(classOf[String])
   }
 
   /**
-    * Validates the dataset name.
+    * Validates the asset name.
     *
     * Rules:
     * - Must be at least 1 character long.
     * - Only lowercase letters, numbers, underscores, and hyphens are allowed.
     * - Cannot start with a hyphen.
     *
-    * @param name The dataset name to validate.
+    * @param name The asset name to validate.
     * @throws IllegalArgumentException if the name is invalid.
     */
-  private def validateDatasetName(name: String): Unit = {
-    val datasetNamePattern = "^[A-Za-z0-9_-]+$".r
-    if (!datasetNamePattern.matches(name)) {
+  private def validateAssetName(name: String): Unit = {
+    val assetNamePattern = "^[A-Za-z0-9_-]+$".r
+    if (!assetNamePattern.matches(name)) {
       throw new IllegalArgumentException(
-        s"Invalid dataset name: '$name'. " +
-          "Dataset names must be at least 1 character long and " +
+        s"Invalid asset name: '$name'. " +
+          "Asset names must be at least 1 character long and " +
           "contain only lowercase letters, numbers, underscores, and hyphens, " +
           "and cannot start with a hyphen."
       )
     }
   }
 
-  private def fetchDatasetVersions(ctx: DSLContext, did: Integer): List[DatasetVersion] = {
+  private def fetchAssetVersions(ctx: DSLContext, aid: Integer): List[AssetVersion] = {
     ctx
-      .selectFrom(DATASET_VERSION)
-      .where(DATASET_VERSION.DID.eq(did))
-      .orderBy(DATASET_VERSION.CREATION_TIME.desc()) // Change to .asc() for ascending order
-      .fetchInto(classOf[DatasetVersion])
+      .selectFrom(ASSET_VERSION)
+      .where(ASSET_VERSION.AID.eq(aid))
+      .orderBy(ASSET_VERSION.CREATION_TIME.desc()) // Change to .asc() for ascending order
+      .fetchInto(classOf[AssetVersion])
       .asScala
       .toList
   }
 
-  private def fetchDatasetVersionRootFileNodes(
+  private def fetchAssetVersionRootFileNodes(
       ctx: DSLContext,
-      did: Integer,
-      dvid: Integer,
+      aid: Integer,
+      avid: Integer,
       uid: Option[Integer]
-  ): DatasetVersionRootFileNodesResponse = {
-    val dataset = getDashboardDataset(ctx, did, uid)
-    val datasetVersion = getDatasetVersionByID(ctx, dvid)
-    val datasetName = dataset.dataset.getName
-    val repositoryName = dataset.dataset.getRepositoryName
+  ): AssetVersionRootFileNodesResponse = {
+    val dashboardAsset = getDashboardAsset(ctx, aid, uid)
+    val assetVersion = getAssetVersionByID(ctx, avid)
+    val repoName = dashboardAsset.asset.getName
+    val repositoryName = dashboardAsset.asset.getRepositoryName
 
-    val ownerFileNode = DatasetFileNode
+    val resourceTypeNode = AssetFileNode
       .fromLakeFSRepositoryCommittedObjects(
         Map(
-          (dataset.ownerEmail, datasetName, datasetVersion.getName) -> LakeFSStorageClient
-            .retrieveObjectsOfVersion(repositoryName, datasetVersion.getVersionHash)
+          (resourceTypePrefix(dashboardAsset.asset.getType), dashboardAsset.ownerEmail, repoName, assetVersion.getName) -> LakeFSStorageClient
+            .retrieveObjectsOfVersion(repositoryName, assetVersion.getVersionHash)
         )
       )
       .head
 
-    DatasetVersionRootFileNodesResponse(
+    val ownerFileNode = resourceTypeNode.children.get.head
+
+    AssetVersionRootFileNodesResponse(
       ownerFileNode.children.get
-        .find(_.getName == datasetName)
+        .find(_.getName == repoName)
         .head
         .children
         .get
-        .find(_.getName == datasetVersion.getName)
+        .find(_.getName == assetVersion.getName)
         .head
         .children
         .get,
-      DatasetFileNode.calculateTotalSize(List(ownerFileNode))
+      AssetFileNode.calculateTotalSize(List(resourceTypeNode))
     )
   }
 
@@ -1398,7 +1415,7 @@ class DatasetResource {
       commitHash: String,
       uid: Integer
   ): Response = {
-    resolveDatasetAndPath(encodedUrl, repositoryName, commitHash, uid) match {
+    resolveAssetAndPath(encodedUrl, repositoryName, commitHash, uid) match {
       case Left(errorResponse) =>
         errorResponse
 
@@ -1413,7 +1430,7 @@ class DatasetResource {
     }
   }
 
-  private def resolveDatasetAndPath(
+  private def resolveAssetAndPath(
       encodedUrl: String,
       repositoryName: String,
       commitHash: String,
@@ -1436,15 +1453,15 @@ class DatasetResource {
       case (Some(repositoryName), Some(commit)) =>
         // Case 2: repositoryName and commitHash are provided, validate access
         val response = withTransaction(context) { ctx =>
-          val datasetDao = new DatasetDao(ctx.configuration())
-          val datasets = datasetDao.fetchByRepositoryName(repositoryName).asScala.toList
+          val assetDao = new AssetDao(ctx.configuration())
+          val assets = assetDao.fetchByRepositoryName(repositoryName).asScala.toList
 
-          if (datasets.isEmpty || !userHasReadAccess(ctx, datasets.head.getDid, uid))
-            throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
+          if (assets.isEmpty || !userHasReadAccess(ctx, assets.head.getAid, uid))
+            throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
 
-          val dataset = datasets.head
+          val asset = assets.head
           // Standard read access check only - download restrictions handled per endpoint
-          // Non-download operations (viewing) should work for all public datasets
+          // Non-download operations (viewing) should work for all public assets
 
           (repositoryName, commit, decodedPathStr)
         }
@@ -1454,17 +1471,17 @@ class DatasetResource {
         // Case 3: Neither repositoryName nor commitHash are provided, resolve normally
         val response = withTransaction(context) { ctx =>
           val fileUri = FileResolver.resolve(decodedPathStr)
-          val document = DocumentFactory.openReadonlyDocument(fileUri).asInstanceOf[OnDataset]
-          val datasetDao = new DatasetDao(ctx.configuration())
-          val datasets =
-            datasetDao.fetchByRepositoryName(document.getRepositoryName()).asScala.toList
+          val document = DocumentFactory.openReadonlyDocument(fileUri).asInstanceOf[OnAsset]
+          val assetDao = new AssetDao(ctx.configuration())
+          val assets =
+            assetDao.fetchByRepositoryName(document.getRepositoryName()).asScala.toList
 
-          if (datasets.isEmpty || !userHasReadAccess(ctx, datasets.head.getDid, uid))
-            throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
+          if (assets.isEmpty || !userHasReadAccess(ctx, assets.head.getAid, uid))
+            throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
 
-          val dataset = datasets.head
+          val asset = assets.head
           // Standard read access check only - download restrictions handled per endpoint
-          // Non-download operations (viewing) should work for all public datasets
+          // Non-download operations (viewing) should work for all public assets
 
           (
             document.getRepositoryName(),
@@ -1478,40 +1495,40 @@ class DatasetResource {
 
   // === Multipart helpers ===
 
-  private def getDatasetBy(ownerEmail: String, datasetName: String) = {
-    val dataset = context
-      .select(DATASET.fields: _*)
-      .from(DATASET)
+  private def getAssetBy(ownerEmail: String, assetName: String) = {
+    val asset = context
+      .select(ASSET.fields: _*)
+      .from(ASSET)
       .leftJoin(USER)
-      .on(USER.UID.eq(DATASET.OWNER_UID))
+      .on(USER.UID.eq(ASSET.OWNER_UID))
       .where(USER.EMAIL.eq(ownerEmail))
-      .and(DATASET.NAME.eq(datasetName))
-      .fetchOneInto(classOf[Dataset])
-    if (dataset == null) {
-      throw new BadRequestException("Dataset not found")
+      .and(ASSET.NAME.eq(assetName))
+      .fetchOneInto(classOf[Asset])
+    if (asset == null) {
+      throw new BadRequestException("Asset not found")
     }
-    dataset
+    asset
   }
 
-  private def listMultipartUploads(did: Integer, requesterUid: Int): Response = {
+  private def listMultipartUploads(aid: Integer, requesterUid: Int): Response = {
     withTransaction(context) { ctx =>
-      if (!userHasWriteAccess(ctx, did, requesterUid)) {
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
+      if (!userHasWriteAccess(ctx, aid, requesterUid)) {
+        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
       }
 
       val filePaths =
         ctx
-          .selectDistinct(DATASET_UPLOAD_SESSION.FILE_PATH)
-          .from(DATASET_UPLOAD_SESSION)
-          .where(DATASET_UPLOAD_SESSION.DID.eq(did))
+          .selectDistinct(ASSET_UPLOAD_SESSION.FILE_PATH)
+          .from(ASSET_UPLOAD_SESSION)
+          .where(ASSET_UPLOAD_SESSION.AID.eq(aid))
           .and(
             DSL.condition(
               "created_at > current_timestamp - (? * interval '1 hour')",
               PHYSICAL_ADDRESS_EXPIRATION_TIME_HRS
             )
           )
-          .orderBy(DATASET_UPLOAD_SESSION.FILE_PATH.asc())
-          .fetch(DATASET_UPLOAD_SESSION.FILE_PATH)
+          .orderBy(ASSET_UPLOAD_SESSION.FILE_PATH.asc())
+          .fetch(ASSET_UPLOAD_SESSION.FILE_PATH)
           .asScala
           .toList
 
@@ -1520,7 +1537,7 @@ class DatasetResource {
   }
 
   private def initMultipartUpload(
-      did: Integer,
+      aid: Integer,
       encodedFilePath: String,
       fileSizeBytes: Optional[java.lang.Long],
       partSizeBytes: Optional[java.lang.Long],
@@ -1529,12 +1546,12 @@ class DatasetResource {
   ): Response = {
 
     withTransaction(context) { ctx =>
-      if (!userHasWriteAccess(ctx, did, uid)) {
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
+      if (!userHasWriteAccess(ctx, aid, uid)) {
+        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
       }
 
-      val dataset = getDatasetByID(ctx, did)
-      val repositoryName = dataset.getRepositoryName
+      val asset = getAssetByID(ctx, aid)
+      val repositoryName = asset.getRepositoryName
 
       val filePath =
         validateAndNormalizeFilePathOrThrow(
@@ -1587,16 +1604,16 @@ class DatasetResource {
             s"All non-final parts must be >= $MINIMUM_NUM_OF_MULTIPART_S3_PART bytes."
         )
       }
-      var session: DatasetUploadSessionRecord = null
+      var session: AssetUploadSessionRecord = null
       var rows: Result[Record2[Integer, String]] = null
       try {
         session = ctx
-          .selectFrom(DATASET_UPLOAD_SESSION)
+          .selectFrom(ASSET_UPLOAD_SESSION)
           .where(
-            DATASET_UPLOAD_SESSION.UID
+            ASSET_UPLOAD_SESSION.UID
               .eq(uid)
-              .and(DATASET_UPLOAD_SESSION.DID.eq(did))
-              .and(DATASET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
+              .and(ASSET_UPLOAD_SESSION.AID.eq(aid))
+              .and(ASSET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
           )
           .forUpdate()
           .noWait()
@@ -1604,9 +1621,9 @@ class DatasetResource {
         if (session != null) {
           //Gain parts lock
           rows = ctx
-            .select(DATASET_UPLOAD_SESSION_PART.PART_NUMBER, DATASET_UPLOAD_SESSION_PART.ETAG)
-            .from(DATASET_UPLOAD_SESSION_PART)
-            .where(DATASET_UPLOAD_SESSION_PART.UPLOAD_ID.eq(session.getUploadId))
+            .select(ASSET_UPLOAD_SESSION_PART.PART_NUMBER, ASSET_UPLOAD_SESSION_PART.ETAG)
+            .from(ASSET_UPLOAD_SESSION_PART)
+            .where(ASSET_UPLOAD_SESSION_PART.UPLOAD_ID.eq(session.getUploadId))
             .forUpdate()
             .noWait()
             .fetch()
@@ -1630,8 +1647,8 @@ class DatasetResource {
           if (conflictConfig) {
             // Parts will be deleted automatically (ON DELETE CASCADE)
             ctx
-              .deleteFrom(DATASET_UPLOAD_SESSION)
-              .where(DATASET_UPLOAD_SESSION.UPLOAD_ID.eq(session.getUploadId))
+              .deleteFrom(ASSET_UPLOAD_SESSION)
+              .where(ASSET_UPLOAD_SESSION.UPLOAD_ID.eq(session.getUploadId))
               .execute()
 
             try {
@@ -1671,15 +1688,15 @@ class DatasetResource {
 
         try {
           val rowsInserted = ctx
-            .insertInto(DATASET_UPLOAD_SESSION)
-            .set(DATASET_UPLOAD_SESSION.FILE_PATH, filePath)
-            .set(DATASET_UPLOAD_SESSION.DID, did)
-            .set(DATASET_UPLOAD_SESSION.UID, uid)
-            .set(DATASET_UPLOAD_SESSION.UPLOAD_ID, uploadIdStr)
-            .set(DATASET_UPLOAD_SESSION.PHYSICAL_ADDRESS, physicalAddr)
-            .set(DATASET_UPLOAD_SESSION.NUM_PARTS_REQUESTED, Integer.valueOf(computedNumParts))
-            .set(DATASET_UPLOAD_SESSION.FILE_SIZE_BYTES, java.lang.Long.valueOf(fileSizeBytesValue))
-            .set(DATASET_UPLOAD_SESSION.PART_SIZE_BYTES, java.lang.Long.valueOf(partSizeBytesValue))
+            .insertInto(ASSET_UPLOAD_SESSION)
+            .set(ASSET_UPLOAD_SESSION.FILE_PATH, filePath)
+            .set(ASSET_UPLOAD_SESSION.AID, aid)
+            .set(ASSET_UPLOAD_SESSION.UID, uid)
+            .set(ASSET_UPLOAD_SESSION.UPLOAD_ID, uploadIdStr)
+            .set(ASSET_UPLOAD_SESSION.PHYSICAL_ADDRESS, physicalAddr)
+            .set(ASSET_UPLOAD_SESSION.NUM_PARTS_REQUESTED, Integer.valueOf(computedNumParts))
+            .set(ASSET_UPLOAD_SESSION.FILE_SIZE_BYTES, java.lang.Long.valueOf(fileSizeBytesValue))
+            .set(ASSET_UPLOAD_SESSION.PART_SIZE_BYTES, java.lang.Long.valueOf(partSizeBytesValue))
             .onDuplicateKeyIgnore()
             .execute()
 
@@ -1690,10 +1707,10 @@ class DatasetResource {
 
             ctx
               .insertInto(
-                DATASET_UPLOAD_SESSION_PART,
-                DATASET_UPLOAD_SESSION_PART.UPLOAD_ID,
-                DATASET_UPLOAD_SESSION_PART.PART_NUMBER,
-                DATASET_UPLOAD_SESSION_PART.ETAG
+                ASSET_UPLOAD_SESSION_PART,
+                ASSET_UPLOAD_SESSION_PART.UPLOAD_ID,
+                ASSET_UPLOAD_SESSION_PART.PART_NUMBER,
+                ASSET_UPLOAD_SESSION_PART.ETAG
               )
               .select(
                 ctx
@@ -1707,12 +1724,12 @@ class DatasetResource {
               .execute()
 
             session = ctx
-              .selectFrom(DATASET_UPLOAD_SESSION)
+              .selectFrom(ASSET_UPLOAD_SESSION)
               .where(
-                DATASET_UPLOAD_SESSION.UID
+                ASSET_UPLOAD_SESSION.UID
                   .eq(uid)
-                  .and(DATASET_UPLOAD_SESSION.DID.eq(did))
-                  .and(DATASET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
+                  .and(ASSET_UPLOAD_SESSION.AID.eq(aid))
+                  .and(ASSET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
               )
               .fetchOne()
           } else {
@@ -1726,12 +1743,12 @@ class DatasetResource {
             } catch { case _: Throwable => () }
 
             session = ctx
-              .selectFrom(DATASET_UPLOAD_SESSION)
+              .selectFrom(ASSET_UPLOAD_SESSION)
               .where(
-                DATASET_UPLOAD_SESSION.UID
+                ASSET_UPLOAD_SESSION.UID
                   .eq(uid)
-                  .and(DATASET_UPLOAD_SESSION.DID.eq(did))
-                  .and(DATASET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
+                  .and(ASSET_UPLOAD_SESSION.AID.eq(aid))
+                  .and(ASSET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
               )
               .fetchOne()
           }
@@ -1766,9 +1783,9 @@ class DatasetResource {
         rows =
           try {
             ctx
-              .select(DATASET_UPLOAD_SESSION_PART.PART_NUMBER, DATASET_UPLOAD_SESSION_PART.ETAG)
-              .from(DATASET_UPLOAD_SESSION_PART)
-              .where(DATASET_UPLOAD_SESSION_PART.UPLOAD_ID.eq(uploadId))
+              .select(ASSET_UPLOAD_SESSION_PART.PART_NUMBER, ASSET_UPLOAD_SESSION_PART.ETAG)
+              .from(ASSET_UPLOAD_SESSION_PART)
+              .where(ASSET_UPLOAD_SESSION_PART.UPLOAD_ID.eq(uploadId))
               .forUpdate()
               .noWait()
               .fetch()
@@ -1787,9 +1804,9 @@ class DatasetResource {
       // CHANGED: compute missingParts + completedPartsCount from the SAME query result
       val missingParts = rows.asScala
         .filter(r =>
-          Option(r.get(DATASET_UPLOAD_SESSION_PART.ETAG)).map(_.trim).getOrElse("").isEmpty
+          Option(r.get(ASSET_UPLOAD_SESSION_PART.ETAG)).map(_.trim).getOrElse("").isEmpty
         )
-        .map(r => r.get(DATASET_UPLOAD_SESSION_PART.PART_NUMBER).intValue())
+        .map(r => r.get(ASSET_UPLOAD_SESSION_PART.PART_NUMBER).intValue())
         .toList
 
       val completedPartsCount = nParts - missingParts.size
@@ -1806,7 +1823,7 @@ class DatasetResource {
   }
 
   private def finishMultipartUpload(
-      did: Integer,
+      aid: Integer,
       encodedFilePath: String,
       uid: Int
   ): Response = {
@@ -1816,22 +1833,22 @@ class DatasetResource {
     )
 
     withTransaction(context) { ctx =>
-      if (!userHasWriteAccess(ctx, did, uid)) {
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
+      if (!userHasWriteAccess(ctx, aid, uid)) {
+        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
       }
 
-      val dataset = getDatasetByID(ctx, did)
+      val asset = getAssetByID(ctx, aid)
 
       // Lock the session so abort/finish don't race each other
       val session =
         try {
           ctx
-            .selectFrom(DATASET_UPLOAD_SESSION)
+            .selectFrom(ASSET_UPLOAD_SESSION)
             .where(
-              DATASET_UPLOAD_SESSION.UID
+              ASSET_UPLOAD_SESSION.UID
                 .eq(uid)
-                .and(DATASET_UPLOAD_SESSION.DID.eq(did))
-                .and(DATASET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
+                .and(ASSET_UPLOAD_SESSION.AID.eq(aid))
+                .and(ASSET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
             )
             .forUpdate()
             .noWait()
@@ -1866,13 +1883,13 @@ class DatasetResource {
       val done =
         DSL
           .count()
-          .filterWhere(DATASET_UPLOAD_SESSION_PART.ETAG.ne(""))
+          .filterWhere(ASSET_UPLOAD_SESSION_PART.ETAG.ne(""))
           .as("done")
 
       val agg = ctx
         .select(total.as("total"), done)
-        .from(DATASET_UPLOAD_SESSION_PART)
-        .where(DATASET_UPLOAD_SESSION_PART.UPLOAD_ID.eq(uploadId))
+        .from(ASSET_UPLOAD_SESSION_PART)
+        .where(ASSET_UPLOAD_SESSION_PART.UPLOAD_ID.eq(uploadId))
         .fetchOne()
 
       val totalCnt = agg.get("total", classOf[java.lang.Integer]).intValue()
@@ -1887,16 +1904,16 @@ class DatasetResource {
 
       if (doneCnt != expectedParts) {
         val missing = ctx
-          .select(DATASET_UPLOAD_SESSION_PART.PART_NUMBER)
-          .from(DATASET_UPLOAD_SESSION_PART)
+          .select(ASSET_UPLOAD_SESSION_PART.PART_NUMBER)
+          .from(ASSET_UPLOAD_SESSION_PART)
           .where(
-            DATASET_UPLOAD_SESSION_PART.UPLOAD_ID
+            ASSET_UPLOAD_SESSION_PART.UPLOAD_ID
               .eq(uploadId)
-              .and(DATASET_UPLOAD_SESSION_PART.ETAG.eq(""))
+              .and(ASSET_UPLOAD_SESSION_PART.ETAG.eq(""))
           )
-          .orderBy(DATASET_UPLOAD_SESSION_PART.PART_NUMBER.asc())
+          .orderBy(ASSET_UPLOAD_SESSION_PART.PART_NUMBER.asc())
           .limit(50)
-          .fetch(DATASET_UPLOAD_SESSION_PART.PART_NUMBER)
+          .fetch(ASSET_UPLOAD_SESSION_PART.PART_NUMBER)
           .asScala
           .toList
 
@@ -1909,23 +1926,23 @@ class DatasetResource {
       // Build partsList in order
       val partsList: List[(Int, String)] =
         ctx
-          .select(DATASET_UPLOAD_SESSION_PART.PART_NUMBER, DATASET_UPLOAD_SESSION_PART.ETAG)
-          .from(DATASET_UPLOAD_SESSION_PART)
-          .where(DATASET_UPLOAD_SESSION_PART.UPLOAD_ID.eq(uploadId))
-          .orderBy(DATASET_UPLOAD_SESSION_PART.PART_NUMBER.asc())
+          .select(ASSET_UPLOAD_SESSION_PART.PART_NUMBER, ASSET_UPLOAD_SESSION_PART.ETAG)
+          .from(ASSET_UPLOAD_SESSION_PART)
+          .where(ASSET_UPLOAD_SESSION_PART.UPLOAD_ID.eq(uploadId))
+          .orderBy(ASSET_UPLOAD_SESSION_PART.PART_NUMBER.asc())
           .fetch()
           .asScala
           .map(r =>
             (
-              r.get(DATASET_UPLOAD_SESSION_PART.PART_NUMBER).intValue(),
-              r.get(DATASET_UPLOAD_SESSION_PART.ETAG)
+              r.get(ASSET_UPLOAD_SESSION_PART.PART_NUMBER).intValue(),
+              r.get(ASSET_UPLOAD_SESSION_PART.ETAG)
             )
           )
           .toList
 
       val objectStats = withLakeFSErrorHandling {
         LakeFSStorageClient.completePresignedMultipartUploads(
-          dataset.getRepositoryName,
+          asset.getRepositoryName,
           filePath,
           uploadId,
           partsList,
@@ -1949,7 +1966,7 @@ class DatasetResource {
 
       if (tooLarge) {
         try {
-          LakeFSStorageClient.resetObjectUploadOrDeletion(dataset.getRepositoryName, filePath)
+          LakeFSStorageClient.resetObjectUploadOrDeletion(asset.getRepositoryName, filePath)
         } catch {
           case _: Throwable => ()
         }
@@ -1957,12 +1974,12 @@ class DatasetResource {
 
       // always cleanup session
       ctx
-        .deleteFrom(DATASET_UPLOAD_SESSION)
+        .deleteFrom(ASSET_UPLOAD_SESSION)
         .where(
-          DATASET_UPLOAD_SESSION.UID
+          ASSET_UPLOAD_SESSION.UID
             .eq(uid)
-            .and(DATASET_UPLOAD_SESSION.DID.eq(did))
-            .and(DATASET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
+            .and(ASSET_UPLOAD_SESSION.AID.eq(aid))
+            .and(ASSET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
         )
         .execute()
 
@@ -1985,7 +2002,7 @@ class DatasetResource {
   }
 
   private def abortMultipartUpload(
-      did: Integer,
+      aid: Integer,
       encodedFilePath: String,
       uid: Int
   ): Response = {
@@ -1995,21 +2012,21 @@ class DatasetResource {
     )
 
     val (repoName, uploadId, physicalAddr) = withTransaction(context) { ctx =>
-      if (!userHasWriteAccess(ctx, did, uid)) {
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
+      if (!userHasWriteAccess(ctx, aid, uid)) {
+        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
       }
 
-      val dataset = getDatasetByID(ctx, did)
+      val asset = getAssetByID(ctx, aid)
 
       val session =
         try {
           ctx
-            .selectFrom(DATASET_UPLOAD_SESSION)
+            .selectFrom(ASSET_UPLOAD_SESSION)
             .where(
-              DATASET_UPLOAD_SESSION.UID
+              ASSET_UPLOAD_SESSION.UID
                 .eq(uid)
-                .and(DATASET_UPLOAD_SESSION.DID.eq(did))
-                .and(DATASET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
+                .and(ASSET_UPLOAD_SESSION.AID.eq(aid))
+                .and(ASSET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
             )
             .forUpdate()
             .noWait()
@@ -2033,16 +2050,16 @@ class DatasetResource {
 
       // Delete session; parts removed via ON DELETE CASCADE
       ctx
-        .deleteFrom(DATASET_UPLOAD_SESSION)
+        .deleteFrom(ASSET_UPLOAD_SESSION)
         .where(
-          DATASET_UPLOAD_SESSION.UID
+          ASSET_UPLOAD_SESSION.UID
             .eq(uid)
-            .and(DATASET_UPLOAD_SESSION.DID.eq(did))
-            .and(DATASET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
+            .and(ASSET_UPLOAD_SESSION.AID.eq(aid))
+            .and(ASSET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
         )
         .execute()
 
-      (dataset.getRepositoryName, session.getUploadId, physicalAddr)
+      (asset.getRepositoryName, session.getUploadId, physicalAddr)
     }
 
     withLakeFSErrorHandling {
@@ -2053,48 +2070,48 @@ class DatasetResource {
   }
 
   /**
-    * Updates the cover image for a dataset.
+    * Updates the cover image for an asset.
     *
-    * @param did Dataset ID
+    * @param aid Asset ID
     * @param request Cover image request containing the relative file path
     * @param sessionUser Authenticated user session
     * @return Response with updated cover image path
     *
-    * Expected coverImage format: "version/folder/image.jpg" (relative to dataset root)
+    * Expected coverImage format: "version/folder/image.jpg" (relative to asset root)
     */
   @POST
   @RolesAllowed(Array("REGULAR", "ADMIN"))
-  @Path("/{did}/update/cover")
+  @Path("/{aid}/update/cover")
   @Consumes(Array(MediaType.APPLICATION_JSON))
-  def updateDatasetCoverImage(
-      @PathParam("did") did: Integer,
+  def updateAssetCoverImage(
+      @PathParam("aid") aid: Integer,
       request: CoverImageRequest,
       @Auth sessionUser: SessionUser
   ): Response = {
     withTransaction(context) { ctx =>
       val uid = sessionUser.getUid
-      val dataset = getDatasetByID(ctx, did)
-      if (!userHasWriteAccess(ctx, did, uid)) {
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
+      val asset = getAssetByID(ctx, aid)
+      if (!userHasWriteAccess(ctx, aid, uid)) {
+        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
       }
 
       if (request.coverImage == null || request.coverImage.trim.isEmpty) {
         throw new BadRequestException("Cover image path is required")
       }
 
-      val normalized = DatasetResource.validateAndNormalizeFilePathOrThrow(request.coverImage)
+      val normalized = AssetResource.validateAndNormalizeFilePathOrThrow(request.coverImage)
 
       val extension = FilenameUtils.getExtension(normalized)
       if (extension == null || !ALLOWED_IMAGE_EXTENSIONS.contains(s".$extension".toLowerCase)) {
         throw new BadRequestException("Invalid file type")
       }
 
-      val owner = getOwner(ctx, did)
+      val owner = getOwner(ctx, aid)
       val document = DocumentFactory
         .openReadonlyDocument(
-          FileResolver.resolve(s"${owner.getEmail}/${dataset.getName}/$normalized")
+          FileResolver.resolve(s"${owner.getEmail}/${asset.getName}/$normalized")
         )
-        .asInstanceOf[OnDataset]
+        .asInstanceOf[OnAsset]
 
       val fileSize = LakeFSStorageClient.getFileSize(
         document.getRepositoryName(),
@@ -2108,46 +2125,46 @@ class DatasetResource {
         )
       }
 
-      dataset.setCoverImage(normalized)
-      new DatasetDao(ctx.configuration()).update(dataset)
+      asset.setCoverImage(normalized)
+      new AssetDao(ctx.configuration()).update(asset)
       Response.ok(Map("coverImage" -> normalized)).build()
     }
   }
 
   /**
-    * Get the cover image for a dataset.
+    * Get the cover image for an asset.
     * Returns a 307 redirect to the presigned S3 URL.
     *
-    * @param did Dataset ID
+    * @param aid Asset ID
     * @return 307 Temporary Redirect to cover image
     */
   @GET
-  @Path("/{did}/cover")
-  def getDatasetCover(
-      @PathParam("did") did: Integer,
+  @Path("/{aid}/cover")
+  def getAssetCover(
+      @PathParam("aid") aid: Integer,
       @Auth sessionUser: Optional[SessionUser]
   ): Response = {
     withTransaction(context) { ctx =>
-      val dataset = getDatasetByID(ctx, did)
+      val asset = getAssetByID(ctx, aid)
 
       val requesterUid = if (sessionUser.isPresent) Some(sessionUser.get().getUid) else None
 
-      if (requesterUid.isEmpty && !dataset.getIsPublic) {
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
-      } else if (requesterUid.exists(uid => !userHasReadAccess(ctx, did, uid))) {
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
+      if (requesterUid.isEmpty && !asset.getIsPublic) {
+        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
+      } else if (requesterUid.exists(uid => !userHasReadAccess(ctx, aid, uid))) {
+        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_ASSET_MESSAGE)
       }
 
-      val coverImage = Option(dataset.getCoverImage).getOrElse(
+      val coverImage = Option(asset.getCoverImage).getOrElse(
         throw new NotFoundException("No cover image")
       )
 
-      val owner = getOwner(ctx, did)
-      val fullPath = s"${owner.getEmail}/${dataset.getName}/$coverImage"
+      val owner = getOwner(ctx, aid)
+      val fullPath = s"${owner.getEmail}/${asset.getName}/$coverImage"
 
       val document = DocumentFactory
         .openReadonlyDocument(FileResolver.resolve(fullPath))
-        .asInstanceOf[OnDataset]
+        .asInstanceOf[OnAsset]
 
       val presignedUrl = LakeFSStorageClient.getFilePresignedUrl(
         document.getRepositoryName(),

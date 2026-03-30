@@ -54,12 +54,12 @@ export class UserDatasetListItemComponent {
   }
 
   get dataset(): Dataset {
-    if (!this.entry.dataset) {
+    if (!this.entry.asset) {
       throw new Error(
         "Incorrect type of DashboardEntry provided to UserDatasetListItemComponent. Entry must be dataset."
       );
     }
-    return this.entry.dataset;
+    return this.entry.asset;
   }
 
   @Input() editable = false;
@@ -76,17 +76,17 @@ export class UserDatasetListItemComponent {
   ) {}
 
   public confirmUpdateDatasetCustomName(name: string) {
-    if (this.entry.dataset.name === name) {
+    if (this.entry.asset.name === name) {
       return;
     }
 
-    if (this.entry.dataset.did)
+    if (this.entry.asset.aid)
       this.datasetService
-        .updateDatasetName(this.entry.dataset.did, name)
+        .updateDatasetName(this.entry.asset.aid, name)
         .pipe(untilDestroyed(this))
         .subscribe({
           next: () => {
-            this.entry.dataset.name = name;
+            this.entry.asset.name = name;
             this.editingName = false;
           },
           error: () => {
@@ -97,17 +97,17 @@ export class UserDatasetListItemComponent {
   }
 
   public confirmUpdateDatasetCustomDescription(description: string) {
-    if (this.entry.dataset.description === description) {
+    if (this.entry.asset.description === description) {
       return;
     }
 
-    if (this.entry.dataset.did)
+    if (this.entry.asset.aid)
       this.datasetService
-        .updateDatasetDescription(this.entry.dataset.did, description)
+        .updateDatasetDescription(this.entry.asset.aid, description)
         .pipe(untilDestroyed(this))
         .subscribe({
           next: () => {
-            this.entry.dataset.description = description;
+            this.entry.asset.description = description;
             this.editingDescription = false;
           },
           error: () => {
@@ -123,7 +123,7 @@ export class UserDatasetListItemComponent {
       nzData: {
         writeAccess: this.entry.accessPrivilege === "WRITE",
         type: "dataset",
-        id: this.dataset.did,
+        id: this.dataset.aid,
       },
       nzFooter: null,
       nzTitle: "Share this dataset with others",

@@ -39,11 +39,11 @@ export function getRelativePathFromDatasetFileNode(node: DatasetFileNode): strin
   const fullPath = getFullPathFromDatasetFileNode(node); // Get the full path
   const pathSegments = fullPath.split("/").filter(segment => segment.length > 0); // Split and remove empty segments
 
-  if (pathSegments.length <= 3) {
-    return ""; // If there are 3 or fewer segments, return an empty string (no relative path exists)
+  if (pathSegments.length <= 4) {
+    return ""; // If there are 4 or fewer segments, return an empty string (no relative path exists)
   }
 
-  return pathSegments.slice(3).join("/"); // Join remaining segments as the relative path
+  return pathSegments.slice(4).join("/"); // Join remaining segments as the relative path
 }
 
 export function getPathsUnderOrEqualDatasetFileNode(node: DatasetFileNode): string[] {

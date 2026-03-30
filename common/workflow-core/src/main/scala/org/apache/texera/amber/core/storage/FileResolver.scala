@@ -22,10 +22,11 @@ package org.apache.texera.amber.core.storage
 import org.apache.commons.vfs2.FileNotFoundException
 import org.apache.texera.dao.SqlServer
 import org.apache.texera.dao.SqlServer.withTransaction
-import org.apache.texera.dao.jooq.generated.tables.Dataset.DATASET
-import org.apache.texera.dao.jooq.generated.tables.DatasetVersion.DATASET_VERSION
+import org.apache.texera.dao.jooq.generated.tables.Asset.ASSET
+import org.apache.texera.dao.jooq.generated.tables.AssetVersion.ASSET_VERSION
 import org.apache.texera.dao.jooq.generated.tables.User.USER
-import org.apache.texera.dao.jooq.generated.tables.pojos.{Dataset, DatasetVersion}
+import org.apache.texera.dao.jooq.generated.enums.AssetTypeEnum
+import org.apache.texera.dao.jooq.generated.tables.pojos.{Asset, AssetVersion}
 
 import java.net.{URI, URLEncoder}
 import java.nio.charset.StandardCharsets
@@ -34,14 +35,14 @@ import scala.jdk.CollectionConverters.IteratorHasAsScala
 import scala.util.{Success, Try}
 
 /**
-  * Unified object for resolving both VFS resources and local/dataset files.
+  * Unified object for resolving both VFS resources and local/asset files.
   */
 object FileResolver {
 
-  val DATASET_FILE_URI_SCHEME = "dataset"
+  val ASSET_FILE_URI_SCHEME = "asset"
 
   /**
-    * Resolves a given fileName to either a file on the local file system or a dataset file.
+    * Resolves a given fileName to either a file on the local file system or an asset file.
     *
     * @param fileName the name of the file to resolve.
     * @throws FileNotFoundException if the file cannot be resolved.
@@ -51,7 +52,7 @@ object FileResolver {
     if (isFileResolved(fileName)) {
       return new URI(fileName)
     }
-    val resolvers: Seq[String => URI] = Seq(localResolveFunc, datasetResolveFunc)
+    val resolvers: Seq[String => URI] = Seq(localResolveFunc, assetResolveFunc)
 
     // Try each resolver function in sequence
     resolvers
@@ -76,79 +77,96 @@ object FileResolver {
   }
 
   /**
-    * Parses a dataset file path and extracts its components.
-    * Expected format: /ownerEmail/datasetName/versionName/fileRelativePath
+    * Parses an asset file path and extracts its components.
+    * Expected format: /resourceType/ownerEmail/repoName/versionName/fileRelativePath
+    *   e.g. /datasets/bob@texera.com/twitterDataset/v1/california/irvine/tw1.csv
     *
     * @param fileName The file path to parse
-    * @return Some((ownerEmail, datasetName, versionName, fileRelativePath)) if valid, None otherwise
+    * @return Some((resourceType, ownerEmail, repoName, versionName, fileRelativePath)) if valid, None otherwise
     */
-  private def parseDatasetFilePath(
+  private def parseAssetFilePath(
       fileName: String
-  ): Option[(String, String, String, Array[String])] = {
+  ): Option[(String, String, String, String, Array[String])] = {
     val filePath = Paths.get(fileName)
     val pathSegments = (0 until filePath.getNameCount).map(filePath.getName(_).toString).toArray
 
-    if (pathSegments.length < 4) {
+    if (pathSegments.length < 5) {
       return None
     }
 
-    val ownerEmail = pathSegments(0)
-    val datasetName = pathSegments(1)
-    val versionName = pathSegments(2)
-    val fileRelativePathSegments = pathSegments.drop(3)
+    val resourceType = pathSegments(0)
+    val ownerEmail = pathSegments(1)
+    val repoName = pathSegments(2)
+    val versionName = pathSegments(3)
+    val fileRelativePathSegments = pathSegments.drop(4)
 
-    Some((ownerEmail, datasetName, versionName, fileRelativePathSegments))
+    Some((resourceType, ownerEmail, repoName, versionName, fileRelativePathSegments))
+  }
+
+  /**
+    * Maps a resource type prefix string to the corresponding AssetTypeEnum.
+    */
+  private def resolveResourceType(resourceType: String): AssetTypeEnum = {
+    resourceType match {
+      case "datasets" => AssetTypeEnum.dataset
+      case "models"   => AssetTypeEnum.model
+      case _ =>
+        throw new FileNotFoundException(s"Unknown resource type: $resourceType")
+    }
   }
 
   /**
     * Attempts to resolve a given fileName to a URI.
     *
-    * The fileName format should be: /ownerEmail/datasetName/versionName/fileRelativePath
-    *   e.g. /bob@texera.com/twitterDataset/v1/california/irvine/tw1.csv
-    * The output dataset URI format is: {DATASET_FILE_URI_SCHEME}:///{repositoryName}/{versionHash}/fileRelativePath
-    *   e.g. {DATASET_FILE_URI_SCHEME}:///dataset-15/adeq233td/some/dir/file.txt
+    * The fileName format should be: /resourceType/ownerEmail/repoName/versionName/fileRelativePath
+    *   e.g. /datasets/bob@texera.com/twitterDataset/v1/california/irvine/tw1.csv
+    * The output asset URI format is: {ASSET_FILE_URI_SCHEME}:///{repositoryName}/{versionHash}/fileRelativePath
+    *   e.g. {ASSET_FILE_URI_SCHEME}:///asset-15/adeq233td/some/dir/file.txt
     *
-    * @param fileName the name of the file to attempt resolving as a DatasetFileDocument
-    * @return Either[String, DatasetFileDocument] - Right(document) if creation succeeds
-    * @throws FileNotFoundException if the dataset file does not exist or cannot be created
+    * @param fileName the name of the file to attempt resolving as an AssetFileDocument
+    * @return A URI pointing to the resolved file.
+    * @throws FileNotFoundException if the asset file does not exist or cannot be created
     */
-  private def datasetResolveFunc(fileName: String): URI = {
-    val (ownerEmail, datasetName, versionName, fileRelativePathSegments) =
-      parseDatasetFilePath(fileName).getOrElse(
-        throw new FileNotFoundException(s"Dataset file $fileName not found.")
+  private def assetResolveFunc(fileName: String): URI = {
+    val (resourceType, ownerEmail, repoName, versionName, fileRelativePathSegments) =
+      parseAssetFilePath(fileName).getOrElse(
+        throw new FileNotFoundException(s"Asset file $fileName not found.")
       )
+
+    val assetType = resolveResourceType(resourceType)
 
     val fileRelativePath =
       Paths.get(fileRelativePathSegments.head, fileRelativePathSegments.tail: _*)
 
-    // fetch the dataset and version from DB to get dataset ID and version hash
-    val (dataset, datasetVersion) =
+    // fetch the asset and version from DB to get asset ID and version hash
+    val (asset, assetVersion) =
       withTransaction(
         SqlServer
           .getInstance()
           .createDSLContext()
       ) { ctx =>
-        // fetch the dataset from DB
-        val dataset = ctx
-          .select(DATASET.fields: _*)
-          .from(DATASET)
+        // fetch the asset from DB
+        val asset = ctx
+          .select(ASSET.fields: _*)
+          .from(ASSET)
           .leftJoin(USER)
-          .on(USER.UID.eq(DATASET.OWNER_UID))
+          .on(USER.UID.eq(ASSET.OWNER_UID))
           .where(USER.EMAIL.eq(ownerEmail))
-          .and(DATASET.NAME.eq(datasetName))
-          .fetchOneInto(classOf[Dataset])
+          .and(ASSET.NAME.eq(repoName))
+          .and(ASSET.TYPE.eq(assetType))
+          .fetchOneInto(classOf[Asset])
 
-        // fetch the dataset version from DB
-        val datasetVersion = ctx
-          .selectFrom(DATASET_VERSION)
-          .where(DATASET_VERSION.DID.eq(dataset.getDid))
-          .and(DATASET_VERSION.NAME.eq(versionName))
-          .fetchOneInto(classOf[DatasetVersion])
+        // fetch the asset version from DB
+        val assetVersion = ctx
+          .selectFrom(ASSET_VERSION)
+          .where(ASSET_VERSION.AID.eq(asset.getAid))
+          .and(ASSET_VERSION.NAME.eq(versionName))
+          .fetchOneInto(classOf[AssetVersion])
 
-        if (dataset == null || datasetVersion == null) {
-          throw new FileNotFoundException(s"Dataset file $fileName not found.")
+        if (asset == null || assetVersion == null) {
+          throw new FileNotFoundException(s"Asset file $fileName not found.")
         }
-        (dataset, datasetVersion)
+        (asset, assetVersion)
       }
 
     // Convert each segment of fileRelativePath to an encoded String
@@ -160,10 +178,10 @@ object FileResolver {
       }
       .toArray
 
-    // Prepend dataset name and versionHash to the encoded path segments
+    // Prepend repository name and versionHash to the encoded path segments
     val allPathSegments = Array(
-      dataset.getRepositoryName,
-      datasetVersion.getVersionHash
+      asset.getRepositoryName,
+      assetVersion.getVersionHash
     ) ++ encodedFileRelativePath
 
     // Build the format /{repositoryName}/{versionHash}/{fileRelativePath}, both Linux and Windows use forward slash as the splitter
@@ -171,10 +189,10 @@ object FileResolver {
     val encodedPath = uriSplitter + allPathSegments.mkString(uriSplitter)
 
     try {
-      new URI(DATASET_FILE_URI_SCHEME, "", encodedPath, null)
+      new URI(ASSET_FILE_URI_SCHEME, "", encodedPath, null)
     } catch {
       case e: Exception =>
-        throw new FileNotFoundException(s"Dataset file $fileName not found.")
+        throw new FileNotFoundException(s"Asset file $fileName not found.")
     }
   }
 
@@ -194,18 +212,18 @@ object FileResolver {
   }
 
   /**
-    * Parses a dataset file path to extract owner email and dataset name.
-    * Expected format: /ownerEmail/datasetName/versionName/fileRelativePath
+    * Parses an asset file path to extract resource type, owner email and repository name.
+    * Expected format: /resourceType/ownerEmail/repoName/versionName/fileRelativePath
     *
     * @param path The file path from operator properties
-    * @return Some((ownerEmail, datasetName)) if path is valid, None otherwise
+    * @return Some((resourceType, ownerEmail, repoName)) if path is valid, None otherwise
     */
-  def parseDatasetOwnerAndName(path: String): Option[(String, String)] = {
+  def parseAssetOwnerAndName(path: String): Option[(String, String, String)] = {
     if (path == null) {
       return None
     }
-    parseDatasetFilePath(path).map {
-      case (ownerEmail, datasetName, _, _) => (ownerEmail, datasetName)
+    parseAssetFilePath(path).map {
+      case (resourceType, ownerEmail, repoName, _, _) => (resourceType, ownerEmail, repoName)
     }
   }
 }

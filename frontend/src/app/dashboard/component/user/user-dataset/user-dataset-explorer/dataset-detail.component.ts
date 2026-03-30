@@ -216,9 +216,9 @@ export class DatasetDetailComponent implements OnInit {
   }
 
   public onClickDownloadVersionAsZip() {
-    if (this.did && this.selectedVersion && this.selectedVersion.dvid) {
+    if (this.did && this.selectedVersion && this.selectedVersion.avid) {
       this.downloadService
-        .downloadDatasetVersion(this.did, this.selectedVersion.dvid, this.datasetName, this.selectedVersion.name)
+        .downloadDatasetVersion(this.did, this.selectedVersion.avid, this.datasetName, this.selectedVersion.name)
         .pipe(untilDestroyed(this))
         .subscribe();
     }
@@ -274,7 +274,7 @@ export class DatasetDetailComponent implements OnInit {
         .getDataset(this.did, this.isLogin)
         .pipe(untilDestroyed(this))
         .subscribe(dashboardDataset => {
-          const dataset = dashboardDataset.dataset;
+          const dataset = dashboardDataset.asset;
           this.datasetName = dataset.name;
           this.datasetDescription = dataset.description;
           this.userDatasetAccessLevel = dashboardDataset.accessPrivilege;
@@ -321,7 +321,7 @@ export class DatasetDetailComponent implements OnInit {
   }
 
   onClickDownloadCurrentFile = (): void => {
-    if (!this.did || !this.selectedVersion?.dvid) return;
+    if (!this.did || !this.selectedVersion?.avid) return;
     // For public datasets accessed by non-owners, use public endpoint
     const shouldUsePublicEndpoint = this.datasetIsPublic && !this.isOwner;
     this.downloadService
@@ -345,9 +345,9 @@ export class DatasetDetailComponent implements OnInit {
 
   onVersionSelected(version: DatasetVersion): void {
     this.selectedVersion = version;
-    if (this.did && this.selectedVersion.dvid)
+    if (this.did && this.selectedVersion.avid)
       this.datasetService
-        .retrieveDatasetVersionFileTree(this.did, this.selectedVersion.dvid, this.isLogin)
+        .retrieveDatasetVersionFileTree(this.did, this.selectedVersion.avid, this.isLogin)
         .pipe(untilDestroyed(this))
         .subscribe(data => {
           this.fileTreeNodeList = data.fileNodes;

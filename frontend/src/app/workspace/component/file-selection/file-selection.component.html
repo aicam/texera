@@ -31,11 +31,11 @@
         <nz-option
           *ngFor="let dataset of datasets"
           [nzValue]="dataset"
-          [nzLabel]="dataset.dataset.name"
+          [nzLabel]="dataset.asset.name"
           [nzCustomContent]="true">
           <div class="dataset-option">
-            <div class="dataset-id-container">{{ dataset.dataset.did }}</div>
-            <span class="dataset-name">{{ dataset.dataset.name }}</span>
+            <div class="dataset-id-container">{{ dataset.asset.aid }}</div>
+            <span class="dataset-name">{{ dataset.asset.name }}</span>
             <span
               class="dataset-owner"
               *ngIf="dataset.isOwner">

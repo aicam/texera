@@ -22,25 +22,25 @@ package org.apache.texera.service.type.serde;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.ser.std.StdSerializer;
-import org.apache.texera.service.type.DatasetFileNode;
+import org.apache.texera.service.type.AssetFileNode;
 import scala.collection.JavaConverters;
 import scala.collection.immutable.List;
 
 import java.io.IOException;
 
 // this class is used to serialize the FileNode as JSON. So that FileNodes can be inspected by the frontend through JSON.
-public class DatasetFileNodeSerializer extends StdSerializer<DatasetFileNode> {
+public class AssetFileNodeSerializer extends StdSerializer<AssetFileNode> {
 
-    public DatasetFileNodeSerializer() {
+    public AssetFileNodeSerializer() {
         this(null);
     }
 
-    public DatasetFileNodeSerializer(Class<DatasetFileNode> t) {
+    public AssetFileNodeSerializer(Class<AssetFileNode> t) {
         super(t);
     }
 
     @Override
-    public void serialize(DatasetFileNode value, JsonGenerator gen, SerializerProvider provider) throws IOException {
+    public void serialize(AssetFileNode value, JsonGenerator gen, SerializerProvider provider) throws IOException {
         gen.writeStartObject();
         gen.writeStringField("name", value.getName());
         gen.writeStringField("type", value.getNodeType());
@@ -52,8 +52,8 @@ public class DatasetFileNodeSerializer extends StdSerializer<DatasetFileNode> {
         if (value.getNodeType().equals("directory")) {
             gen.writeFieldName("children");
             gen.writeStartArray();
-            List<DatasetFileNode> children = value.getChildren();
-            for (DatasetFileNode child : JavaConverters.seqAsJavaList(children)) {
+            List<AssetFileNode> children = value.getChildren();
+            for (AssetFileNode child : JavaConverters.seqAsJavaList(children)) {
                 serialize(child, gen, provider); // Recursively serialize children
             }
             gen.writeEndArray();

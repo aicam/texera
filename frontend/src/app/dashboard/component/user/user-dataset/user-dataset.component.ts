@@ -180,21 +180,21 @@ export class UserDatasetComponent implements AfterViewInit {
     modal.afterClose.pipe(untilDestroyed(this)).subscribe(result => {
       if (result != null) {
         const dashboardDataset: DashboardDataset = result as DashboardDataset;
-        this.router.navigate([`${DASHBOARD_USER_DATASET}/${dashboardDataset.dataset.did}`]);
+        this.router.navigate([`${DASHBOARD_USER_DATASET}/${dashboardDataset.asset.aid}`]);
       }
     });
   }
 
   public deleteDataset(entry: DashboardEntry): void {
-    if (entry.dataset.dataset.did == undefined) {
+    if (entry.dataset.asset.aid == undefined) {
       return;
     }
     this.datasetService
-      .deleteDatasets(entry.dataset.dataset.did)
+      .deleteDatasets(entry.dataset.asset.aid)
       .pipe(untilDestroyed(this))
       .subscribe(_ => {
         this.searchResultsComponent.entries = this.searchResultsComponent.entries.filter(
-          datasetEntry => datasetEntry.dataset.dataset.did !== entry.dataset.dataset.did
+          datasetEntry => datasetEntry.dataset.asset.aid !== entry.dataset.asset.aid
         );
       });
   }

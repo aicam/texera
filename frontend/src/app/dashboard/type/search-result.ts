@@ -28,7 +28,7 @@ export interface SearchResultItem {
   workflow?: DashboardWorkflow;
   project?: DashboardProject;
   file?: DashboardFile;
-  dataset?: DashboardDataset;
+  asset?: DashboardDataset;
 }
 
 export interface SearchResult {

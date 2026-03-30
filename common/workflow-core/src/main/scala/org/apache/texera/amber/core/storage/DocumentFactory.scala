@@ -20,7 +20,7 @@
 package org.apache.texera.amber.core.storage
 
 import org.apache.texera.amber.config.StorageConfig
-import org.apache.texera.amber.core.storage.FileResolver.DATASET_FILE_URI_SCHEME
+import org.apache.texera.amber.core.storage.FileResolver.ASSET_FILE_URI_SCHEME
 import org.apache.texera.amber.core.storage.VFSResourceType._
 import org.apache.texera.amber.core.storage.VFSURIFactory.{VFS_FILE_URI_SCHEME, decodeURI}
 import org.apache.texera.amber.core.storage.model._
@@ -46,7 +46,7 @@ object DocumentFactory {
     */
   def openReadonlyDocument(fileUri: URI): ReadonlyVirtualDocument[_] = {
     fileUri.getScheme match {
-      case DATASET_FILE_URI_SCHEME => new DatasetFileDocument(fileUri)
+      case ASSET_FILE_URI_SCHEME => new AssetFileDocument(fileUri)
       case "file"                  => new ReadonlyLocalFileDocument(fileUri)
       case unsupportedScheme =>
         throw new UnsupportedOperationException(
@@ -110,7 +110,7 @@ object DocumentFactory {
     */
   def openDocument(uri: URI): (VirtualDocument[_], Option[Schema]) = {
     uri.getScheme match {
-      case DATASET_FILE_URI_SCHEME => (new DatasetFileDocument(uri), None)
+      case ASSET_FILE_URI_SCHEME => (new AssetFileDocument(uri), None)
       case VFS_FILE_URI_SCHEME =>
         val (_, _, _, resourceType) = decodeURI(uri)
         val storageKey = sanitizeURIPath(uri)

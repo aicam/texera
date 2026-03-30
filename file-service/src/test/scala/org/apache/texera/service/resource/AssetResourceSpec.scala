@@ -27,10 +27,11 @@ import org.apache.texera.amber.core.storage.util.LakeFSStorageClient
 import org.apache.texera.auth.SessionUser
 import org.apache.texera.dao.MockTexeraDB
 import org.apache.texera.dao.jooq.generated.enums.{PrivilegeEnum, UserRoleEnum}
-import org.apache.texera.dao.jooq.generated.tables.DatasetUploadSession.DATASET_UPLOAD_SESSION
-import org.apache.texera.dao.jooq.generated.tables.DatasetUploadSessionPart.DATASET_UPLOAD_SESSION_PART
-import org.apache.texera.dao.jooq.generated.tables.daos.{DatasetDao, DatasetVersionDao, UserDao}
-import org.apache.texera.dao.jooq.generated.tables.pojos.{Dataset, DatasetVersion, User}
+import org.apache.texera.dao.jooq.generated.enums.AssetTypeEnum
+import org.apache.texera.dao.jooq.generated.tables.AssetUploadSession.ASSET_UPLOAD_SESSION
+import org.apache.texera.dao.jooq.generated.tables.AssetUploadSessionPart.ASSET_UPLOAD_SESSION_PART
+import org.apache.texera.dao.jooq.generated.tables.daos.{AssetDao, AssetVersionDao, UserDao}
+import org.apache.texera.dao.jooq.generated.tables.pojos.{Asset, AssetVersion, User}
 import org.apache.texera.service.MockLakeFS
 import org.apache.texera.service.util.S3StorageClient
 import org.jooq.SQLDialect
@@ -55,7 +56,7 @@ import scala.util.Random
 
 object StressMultipart extends Tag("org.apache.texera.stress.multipart")
 
-class DatasetResourceSpec
+class AssetResourceSpec
     extends AnyFlatSpec
     with Matchers
     with MockTexeraDB
@@ -93,10 +94,10 @@ class DatasetResourceSpec
   private def listUploads(
       user: SessionUser = multipartOwnerSessionUser
   ): List[String] = {
-    val resp = datasetResource.multipartUpload(
+    val resp = assetResource.multipartUpload(
       "list",
       ownerUser.getEmail,
-      multipartDataset.getName,
+      multipartAsset.getName,
       urlEnc("ignored"),
       Optional.empty(),
       Optional.empty(),
@@ -122,7 +123,7 @@ class DatasetResourceSpec
   private implicit val ec: ExecutionContext = ExecutionContext.global
 
   // ---------------------------------------------------------------------------
-  // Shared fixtures (DatasetResource basic tests)
+  // Shared fixtures (AssetResource basic tests)
   // ---------------------------------------------------------------------------
   private val ownerUser: User = {
     val user = new User
@@ -152,14 +153,15 @@ class DatasetResourceSpec
     user
   }
 
-  private val baseDataset: Dataset = {
-    val dataset = new Dataset
-    dataset.setName("test-dataset")
-    dataset.setRepositoryName("test-dataset")
-    dataset.setIsPublic(true)
-    dataset.setIsDownloadable(true)
-    dataset.setDescription("dataset for test")
-    dataset
+  private val baseAsset: Asset = {
+    val asset = new Asset
+    asset.setName("test-dataset")
+    asset.setRepositoryName("test-dataset")
+    asset.setType(AssetTypeEnum.dataset)
+    asset.setIsPublic(true)
+    asset.setIsDownloadable(true)
+    asset.setDescription("dataset for test")
+    asset
   }
 
   // ---------------------------------------------------------------------------
@@ -168,46 +170,47 @@ class DatasetResourceSpec
   private val multipartRepoName: String =
     s"multipart-ds-${System.nanoTime()}-${Random.alphanumeric.take(6).mkString.toLowerCase}"
 
-  private val multipartDataset: Dataset = {
-    val dataset = new Dataset
-    dataset.setName("multipart-ds")
-    dataset.setRepositoryName(multipartRepoName)
-    dataset.setIsPublic(true)
-    dataset.setIsDownloadable(true)
-    dataset.setDescription("dataset for multipart upload tests")
-    dataset
+  private val multipartAsset: Asset = {
+    val asset = new Asset
+    asset.setName("multipart-ds")
+    asset.setRepositoryName(multipartRepoName)
+    asset.setType(AssetTypeEnum.dataset)
+    asset.setIsPublic(true)
+    asset.setIsDownloadable(true)
+    asset.setDescription("dataset for multipart upload tests")
+    asset
   }
 
-  // Test fixtures for cover image tests. Creates file in LakeFS and DatasetVersion record.
+  // Test fixtures for cover image tests. Creates file in LakeFS and AssetVersion record.
   private val testCoverImagePath = "v1/test-cover.jpg"
   private val testImageBytes: Array[Byte] = Array.fill[Byte](1024)(0xff.toByte)
 
-  private lazy val testDatasetVersion: DatasetVersion = {
+  private lazy val testAssetVersion: AssetVersion = {
     try {
-      LakeFSStorageClient.initRepo(baseDataset.getRepositoryName)
+      LakeFSStorageClient.initRepo(baseAsset.getRepositoryName)
     } catch {
       case e: ApiException if e.getCode == 409 =>
     }
 
     LakeFSStorageClient.writeFileToRepo(
-      baseDataset.getRepositoryName,
+      baseAsset.getRepositoryName,
       "test-cover.jpg",
       new ByteArrayInputStream(testImageBytes)
     )
 
-    val version = new DatasetVersion()
-    version.setDid(baseDataset.getDid)
+    val version = new AssetVersion()
+    version.setAid(baseAsset.getAid)
     version.setCreatorUid(ownerUser.getUid)
     version.setName("v1")
     version.setVersionHash("main")
 
-    new DatasetVersionDao(getDSLContext.configuration()).insert(version)
+    new AssetVersionDao(getDSLContext.configuration()).insert(version)
     version
   }
 
   // ---------- DAOs / resource ----------
-  lazy val datasetDao = new DatasetDao(getDSLContext.configuration())
-  lazy val datasetResource = new DatasetResource()
+  lazy val assetDao = new AssetDao(getDSLContext.configuration())
+  lazy val assetResource = new AssetResource()
 
   // ---------- session users ----------
   lazy val sessionUser = new SessionUser(ownerUser)
@@ -233,11 +236,11 @@ class DatasetResourceSpec
     userDao.insert(multipartNoWriteUser)
 
     // insert datasets (owned by ownerUser)
-    baseDataset.setOwnerUid(ownerUser.getUid)
-    multipartDataset.setOwnerUid(ownerUser.getUid)
+    baseAsset.setOwnerUid(ownerUser.getUid)
+    multipartAsset.setOwnerUid(ownerUser.getUid)
 
-    datasetDao.insert(baseDataset)
-    datasetDao.insert(multipartDataset)
+    assetDao.insert(baseAsset)
+    assetDao.insert(multipartAsset)
 
     savedLevels = Map(
       "org.apache.http.wire" -> setLoggerLevel("org.apache.http.wire", Level.WARN),
@@ -250,7 +253,7 @@ class DatasetResourceSpec
 
     // Multipart repo must exist for presigned multipart init to succeed.
     // If it already exists, ignore 409.
-    try LakeFSStorageClient.initRepo(multipartDataset.getRepositoryName)
+    try LakeFSStorageClient.initRepo(multipartAsset.getRepositoryName)
     catch {
       case e: ApiException if e.getCode == 409 => // ok
     }
@@ -267,107 +270,113 @@ class DatasetResourceSpec
   }
 
   // ===========================================================================
-  // DatasetResourceSpec (original basic tests)
+  // AssetResourceSpec (original basic tests)
   // ===========================================================================
   "createDataset" should "create dataset successfully if user does not have a dataset with the same name" in {
-    val createDatasetRequest = DatasetResource.CreateDatasetRequest(
-      datasetName = "new-dataset",
-      datasetDescription = "description for new dataset",
-      isDatasetPublic = false,
-      isDatasetDownloadable = true
+    val createAssetRequest = AssetResource.CreateAssetRequest(
+      assetName = "new-dataset",
+      assetDescription = "description for new dataset",
+      assetType = AssetTypeEnum.dataset,
+      isAssetPublic = false,
+      isAssetDownloadable = true
     )
 
-    val createdDataset = datasetResource.createDataset(createDatasetRequest, sessionUser)
-    createdDataset.dataset.getName shouldEqual "new-dataset"
-    createdDataset.dataset.getDescription shouldEqual "description for new dataset"
-    createdDataset.dataset.getIsPublic shouldBe false
-    createdDataset.dataset.getIsDownloadable shouldBe true
+    val createdAsset = assetResource.createAsset(createAssetRequest, sessionUser)
+    createdAsset.asset.getName shouldEqual "new-dataset"
+    createdAsset.asset.getDescription shouldEqual "description for new dataset"
+    createdAsset.asset.getIsPublic shouldBe false
+    createdAsset.asset.getIsDownloadable shouldBe true
   }
 
   it should "refuse to create dataset if user already has a dataset with the same name" in {
-    val createDatasetRequest = DatasetResource.CreateDatasetRequest(
-      datasetName = "test-dataset",
-      datasetDescription = "description for new dataset",
-      isDatasetPublic = false,
-      isDatasetDownloadable = true
+    val createAssetRequest = AssetResource.CreateAssetRequest(
+      assetName = "test-dataset",
+      assetDescription = "description for new dataset",
+      assetType = AssetTypeEnum.dataset,
+      isAssetPublic = false,
+      isAssetDownloadable = true
     )
 
     assertThrows[BadRequestException] {
-      datasetResource.createDataset(createDatasetRequest, sessionUser)
+      assetResource.createAsset(createAssetRequest, sessionUser)
     }
   }
 
   it should "create dataset successfully if another user has a dataset with the same name" in {
-    val createDatasetRequest = DatasetResource.CreateDatasetRequest(
-      datasetName = "test-dataset",
-      datasetDescription = "description for new dataset",
-      isDatasetPublic = false,
-      isDatasetDownloadable = true
+    val createAssetRequest = AssetResource.CreateAssetRequest(
+      assetName = "test-dataset",
+      assetDescription = "description for new dataset",
+      assetType = AssetTypeEnum.dataset,
+      isAssetPublic = false,
+      isAssetDownloadable = true
     )
 
-    val createdDataset = datasetResource.createDataset(createDatasetRequest, sessionUser2)
-    createdDataset.dataset.getName shouldEqual "test-dataset"
-    createdDataset.dataset.getDescription shouldEqual "description for new dataset"
-    createdDataset.dataset.getIsPublic shouldBe false
-    createdDataset.dataset.getIsDownloadable shouldBe true
+    val createdAsset = assetResource.createAsset(createAssetRequest, sessionUser2)
+    createdAsset.asset.getName shouldEqual "test-dataset"
+    createdAsset.asset.getDescription shouldEqual "description for new dataset"
+    createdAsset.asset.getIsPublic shouldBe false
+    createdAsset.asset.getIsDownloadable shouldBe true
   }
 
   it should "return DashboardDataset with correct owner email, WRITE privilege, and isOwner=true" in {
-    val createDatasetRequest = DatasetResource.CreateDatasetRequest(
-      datasetName = "dashboard-dataset-test",
-      datasetDescription = "test for DashboardDataset properties",
-      isDatasetPublic = true,
-      isDatasetDownloadable = false
+    val createAssetRequest = AssetResource.CreateAssetRequest(
+      assetName = "dashboard-dataset-test",
+      assetDescription = "test for DashboardDataset properties",
+      assetType = AssetTypeEnum.dataset,
+      isAssetPublic = true,
+      isAssetDownloadable = false
     )
 
-    val dashboardDataset = datasetResource.createDataset(createDatasetRequest, sessionUser)
+    val dashboardAsset = assetResource.createAsset(createAssetRequest, sessionUser)
 
-    dashboardDataset.ownerEmail shouldEqual ownerUser.getEmail
-    dashboardDataset.accessPrivilege shouldEqual PrivilegeEnum.WRITE
-    dashboardDataset.isOwner shouldBe true
-    dashboardDataset.size shouldEqual 0
+    dashboardAsset.ownerEmail shouldEqual ownerUser.getEmail
+    dashboardAsset.accessPrivilege shouldEqual PrivilegeEnum.WRITE
+    dashboardAsset.isOwner shouldBe true
+    dashboardAsset.size shouldEqual 0
 
-    dashboardDataset.dataset.getName shouldEqual "dashboard-dataset-test"
-    dashboardDataset.dataset.getDescription shouldEqual "test for DashboardDataset properties"
-    dashboardDataset.dataset.getIsPublic shouldBe true
-    dashboardDataset.dataset.getIsDownloadable shouldBe false
+    dashboardAsset.asset.getName shouldEqual "dashboard-dataset-test"
+    dashboardAsset.asset.getDescription shouldEqual "test for DashboardDataset properties"
+    dashboardAsset.asset.getIsPublic shouldBe true
+    dashboardAsset.asset.getIsDownloadable shouldBe false
   }
 
   it should "delete dataset successfully if user owns it" in {
-    val dataset = new Dataset
-    dataset.setName("delete-ds")
-    dataset.setRepositoryName("delete-ds")
-    dataset.setDescription("for delete test")
-    dataset.setOwnerUid(ownerUser.getUid)
-    dataset.setIsPublic(true)
-    dataset.setIsDownloadable(true)
-    datasetDao.insert(dataset)
+    val asset = new Asset
+    asset.setName("delete-ds")
+    asset.setRepositoryName("delete-ds")
+    asset.setType(AssetTypeEnum.dataset)
+    asset.setDescription("for delete test")
+    asset.setOwnerUid(ownerUser.getUid)
+    asset.setIsPublic(true)
+    asset.setIsDownloadable(true)
+    assetDao.insert(asset)
 
-    LakeFSStorageClient.initRepo(dataset.getRepositoryName)
+    LakeFSStorageClient.initRepo(asset.getRepositoryName)
 
-    val response = datasetResource.deleteDataset(dataset.getDid, sessionUser)
+    val response = assetResource.deleteAsset(asset.getAid, sessionUser)
 
     response.getStatus shouldEqual 200
-    datasetDao.fetchOneByDid(dataset.getDid) shouldBe null
+    assetDao.fetchOneByAid(asset.getAid) shouldBe null
   }
 
   it should "refuse to delete dataset if not owned by user" in {
-    val dataset = new Dataset
-    dataset.setName("user1-ds")
-    dataset.setRepositoryName("user1-ds")
-    dataset.setDescription("for forbidden test")
-    dataset.setOwnerUid(ownerUser.getUid)
-    dataset.setIsPublic(true)
-    dataset.setIsDownloadable(true)
-    datasetDao.insert(dataset)
+    val asset = new Asset
+    asset.setName("user1-ds")
+    asset.setRepositoryName("user1-ds")
+    asset.setType(AssetTypeEnum.dataset)
+    asset.setDescription("for forbidden test")
+    asset.setOwnerUid(ownerUser.getUid)
+    asset.setIsPublic(true)
+    asset.setIsDownloadable(true)
+    assetDao.insert(asset)
 
-    LakeFSStorageClient.initRepo(dataset.getRepositoryName)
+    LakeFSStorageClient.initRepo(asset.getRepositoryName)
 
     assertThrows[ForbiddenException] {
-      datasetResource.deleteDataset(dataset.getDid, sessionUser2)
+      assetResource.deleteAsset(asset.getAid, sessionUser2)
     }
 
-    datasetDao.fetchOneByDid(dataset.getDid) should not be null
+    assetDao.fetchOneByAid(asset.getAid) should not be null
   }
 
   // ===========================================================================
@@ -424,7 +433,7 @@ class DatasetResourceSpec
       }
     }
 
-  /** Minimal HttpHeaders impl needed by DatasetResource.uploadPart */
+  /** Minimal HttpHeaders impl needed by AssetResource.uploadPart */
   private def mkHeaders(contentLength: Long): HttpHeaders =
     new HttpHeaders {
       private val headers = new MultivaluedHashMap[String, String]()
@@ -539,10 +548,10 @@ class DatasetResourceSpec
     val maxPartSizeBytes: Long =
       if (numParts == 1) Math.max(partSizeBytes.toLong, fileSizeBytes) else partSizeBytes.toLong
 
-    datasetResource.multipartUpload(
+    assetResource.multipartUpload(
       "init",
       ownerUser.getEmail,
-      multipartDataset.getName,
+      multipartAsset.getName,
       urlEnc(filePath),
       Optional.of(java.lang.Long.valueOf(fileSizeBytes)),
       Optional.of(java.lang.Long.valueOf(maxPartSizeBytes)),
@@ -556,10 +565,10 @@ class DatasetResourceSpec
       partSizeBytes: Long,
       user: SessionUser = multipartOwnerSessionUser
   ): Response = {
-    datasetResource.multipartUpload(
+    assetResource.multipartUpload(
       "init",
       ownerUser.getEmail,
-      multipartDataset.getName,
+      multipartAsset.getName,
       urlEnc(filePath),
       Optional.of(java.lang.Long.valueOf(fileSizeBytes)),
       Optional.of(java.lang.Long.valueOf(partSizeBytes)),
@@ -572,10 +581,10 @@ class DatasetResourceSpec
       filePath: String,
       user: SessionUser = multipartOwnerSessionUser
   ): Response =
-    datasetResource.multipartUpload(
+    assetResource.multipartUpload(
       "finish",
       ownerUser.getEmail,
-      multipartDataset.getName,
+      multipartAsset.getName,
       urlEnc(filePath),
       Optional.empty(),
       Optional.empty(),
@@ -587,10 +596,10 @@ class DatasetResourceSpec
       filePath: String,
       user: SessionUser = multipartOwnerSessionUser
   ): Response =
-    datasetResource.multipartUpload(
+    assetResource.multipartUpload(
       "abort",
       ownerUser.getEmail,
-      multipartDataset.getName,
+      multipartAsset.getName,
       urlEnc(filePath),
       Optional.empty(),
       Optional.empty(),
@@ -613,9 +622,9 @@ class DatasetResourceSpec
       else
         rawContentLengthOverride.map(mkHeadersRawContentLength).getOrElse(mkHeaders(contentLength))
 
-    datasetResource.uploadPart(
+    assetResource.uploadPart(
       ownerUser.getEmail,
-      multipartDataset.getName,
+      multipartAsset.getName,
       urlEnc(filePath),
       partNumber,
       new ByteArrayInputStream(bytes),
@@ -634,9 +643,9 @@ class DatasetResourceSpec
   ): Response = {
     val headers =
       rawContentLengthOverride.map(mkHeadersRawContentLength).getOrElse(mkHeaders(contentLength))
-    datasetResource.uploadPart(
+    assetResource.uploadPart(
       ownerUser.getEmail,
-      multipartDataset.getName,
+      multipartAsset.getName,
       urlEnc(filePath),
       partNumber,
       stream,
@@ -647,19 +656,19 @@ class DatasetResourceSpec
 
   private def fetchSession(filePath: String) =
     getDSLContext
-      .selectFrom(DATASET_UPLOAD_SESSION)
+      .selectFrom(ASSET_UPLOAD_SESSION)
       .where(
-        DATASET_UPLOAD_SESSION.UID
+        ASSET_UPLOAD_SESSION.UID
           .eq(ownerUser.getUid)
-          .and(DATASET_UPLOAD_SESSION.DID.eq(multipartDataset.getDid))
-          .and(DATASET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
+          .and(ASSET_UPLOAD_SESSION.AID.eq(multipartAsset.getAid))
+          .and(ASSET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
       )
       .fetchOne()
 
   private def fetchPartRows(uploadId: String) =
     getDSLContext
-      .selectFrom(DATASET_UPLOAD_SESSION_PART)
-      .where(DATASET_UPLOAD_SESSION_PART.UPLOAD_ID.eq(uploadId))
+      .selectFrom(ASSET_UPLOAD_SESSION_PART)
+      .where(ASSET_UPLOAD_SESSION_PART.UPLOAD_ID.eq(uploadId))
       .fetch()
       .asScala
       .toList
@@ -673,14 +682,14 @@ class DatasetResourceSpec
   private def expireUploadSession(uploadId: String): Unit = {
     val expiredHoursAgo = S3StorageClient.PHYSICAL_ADDRESS_EXPIRATION_TIME_HRS + 1
     getDSLContext
-      .update(DATASET_UPLOAD_SESSION)
+      .update(ASSET_UPLOAD_SESSION)
       .set(
-        DATASET_UPLOAD_SESSION.CREATED_AT,
+        ASSET_UPLOAD_SESSION.CREATED_AT,
         DSL
           .field(s"current_timestamp - interval '${expiredHoursAgo} hours'")
           .cast(classOf[java.time.OffsetDateTime])
       )
-      .where(DATASET_UPLOAD_SESSION.UPLOAD_ID.eq(uploadId))
+      .where(ASSET_UPLOAD_SESSION.UPLOAD_ID.eq(uploadId))
       .execute()
   }
 
@@ -704,8 +713,8 @@ class DatasetResourceSpec
   "multipart-upload?type=list" should "return empty when no active sessions exist for the dataset" in {
     // Make deterministic: remove any leftover sessions from other tests.
     getDSLContext
-      .deleteFrom(DATASET_UPLOAD_SESSION)
-      .where(DATASET_UPLOAD_SESSION.DID.eq(multipartDataset.getDid))
+      .deleteFrom(ASSET_UPLOAD_SESSION)
+      .where(ASSET_UPLOAD_SESSION.AID.eq(multipartAsset.getAid))
       .execute()
 
     listUploads() shouldBe empty
@@ -721,8 +730,8 @@ class DatasetResourceSpec
   it should "return only non-expired sessions, sorted by filePath (and exclude expired ones)" in {
     // Clean slate
     getDSLContext
-      .deleteFrom(DATASET_UPLOAD_SESSION)
-      .where(DATASET_UPLOAD_SESSION.DID.eq(multipartDataset.getDid))
+      .deleteFrom(ASSET_UPLOAD_SESSION)
+      .where(ASSET_UPLOAD_SESSION.AID.eq(multipartAsset.getAid))
       .execute()
 
     val fpA = uniqueFilePath("list-a")
@@ -744,8 +753,8 @@ class DatasetResourceSpec
   it should "not list sessions after abort (cleanup works end-to-end)" in {
     // Clean slate
     getDSLContext
-      .deleteFrom(DATASET_UPLOAD_SESSION)
-      .where(DATASET_UPLOAD_SESSION.DID.eq(multipartDataset.getDid))
+      .deleteFrom(ASSET_UPLOAD_SESSION)
+      .where(ASSET_UPLOAD_SESSION.AID.eq(multipartAsset.getAid))
       .execute()
 
     val fp = uniqueFilePath("list-after-abort")
@@ -978,12 +987,12 @@ class DatasetResourceSpec
     try {
       val locking = DSL.using(connection, SQLDialect.POSTGRES)
       locking
-        .selectFrom(DATASET_UPLOAD_SESSION)
+        .selectFrom(ASSET_UPLOAD_SESSION)
         .where(
-          DATASET_UPLOAD_SESSION.UID
+          ASSET_UPLOAD_SESSION.UID
             .eq(ownerUser.getUid)
-            .and(DATASET_UPLOAD_SESSION.DID.eq(multipartDataset.getDid))
-            .and(DATASET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
+            .and(ASSET_UPLOAD_SESSION.AID.eq(multipartAsset.getAid))
+            .and(ASSET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
         )
         .forUpdate()
         .fetchOne()
@@ -1107,10 +1116,10 @@ class DatasetResourceSpec
   it should "reject missing fileSizeBytes / partSizeBytes" in {
     val filePath1 = uniqueFilePath("init-missing-filesize")
     val ex1 = intercept[BadRequestException] {
-      datasetResource.multipartUpload(
+      assetResource.multipartUpload(
         "init",
         ownerUser.getEmail,
-        multipartDataset.getName,
+        multipartAsset.getName,
         urlEnc(filePath1),
         Optional.empty(),
         Optional.of(java.lang.Long.valueOf(MinNonFinalPartBytes.toLong)),
@@ -1122,10 +1131,10 @@ class DatasetResourceSpec
 
     val filePath2 = uniqueFilePath("init-missing-partsize")
     val ex2 = intercept[BadRequestException] {
-      datasetResource.multipartUpload(
+      assetResource.multipartUpload(
         "init",
         ownerUser.getEmail,
-        multipartDataset.getName,
+        multipartAsset.getName,
         urlEnc(filePath2),
         Optional.of(java.lang.Long.valueOf(1L)),
         Optional.empty(),
@@ -1141,10 +1150,10 @@ class DatasetResourceSpec
 
     assertStatus(
       intercept[BadRequestException] {
-        datasetResource.multipartUpload(
+        assetResource.multipartUpload(
           "init",
           ownerUser.getEmail,
-          multipartDataset.getName,
+          multipartAsset.getName,
           urlEnc(filePath),
           Optional.of(java.lang.Long.valueOf(0L)),
           Optional.of(java.lang.Long.valueOf(1L)),
@@ -1157,10 +1166,10 @@ class DatasetResourceSpec
 
     assertStatus(
       intercept[BadRequestException] {
-        datasetResource.multipartUpload(
+        assetResource.multipartUpload(
           "init",
           ownerUser.getEmail,
-          multipartDataset.getName,
+          multipartAsset.getName,
           urlEnc(filePath),
           Optional.of(java.lang.Long.valueOf(1L)),
           Optional.of(java.lang.Long.valueOf(0L)),
@@ -1181,10 +1190,10 @@ class DatasetResourceSpec
     val filePathOver = uniqueFilePath("init-max-over")
     assertStatus(
       intercept[BadRequestException] {
-        datasetResource.multipartUpload(
+        assetResource.multipartUpload(
           "init",
           ownerUser.getEmail,
-          multipartDataset.getName,
+          multipartAsset.getName,
           urlEnc(filePathOver),
           Optional.of(java.lang.Long.valueOf(oneMiB + 1L)),
           Optional.of(java.lang.Long.valueOf(oneMiB + 1L)), // single-part
@@ -1197,10 +1206,10 @@ class DatasetResourceSpec
 
     val filePathEq = uniqueFilePath("init-max-eq")
     val resp =
-      datasetResource.multipartUpload(
+      assetResource.multipartUpload(
         "init",
         ownerUser.getEmail,
-        multipartDataset.getName,
+        multipartAsset.getName,
         urlEnc(filePathEq),
         Optional.of(java.lang.Long.valueOf(oneMiB)),
         Optional.of(java.lang.Long.valueOf(oneMiB)), // single-part
@@ -1220,10 +1229,10 @@ class DatasetResourceSpec
 
     val filePathEq = uniqueFilePath("init-max-multipart-eq")
     val respEq =
-      datasetResource.multipartUpload(
+      assetResource.multipartUpload(
         "init",
         ownerUser.getEmail,
-        multipartDataset.getName,
+        multipartAsset.getName,
         urlEnc(filePathEq),
         Optional.of(java.lang.Long.valueOf(max6MiB)),
         Optional.of(java.lang.Long.valueOf(partSize)),
@@ -1237,10 +1246,10 @@ class DatasetResourceSpec
     val filePathOver = uniqueFilePath("init-max-multipart-over")
     assertStatus(
       intercept[BadRequestException] {
-        datasetResource.multipartUpload(
+        assetResource.multipartUpload(
           "init",
           ownerUser.getEmail,
-          multipartDataset.getName,
+          multipartAsset.getName,
           urlEnc(filePathOver),
           Optional.of(java.lang.Long.valueOf(max6MiB + 1L)),
           Optional.of(java.lang.Long.valueOf(partSize)),
@@ -1260,10 +1269,10 @@ class DatasetResourceSpec
     val filePath = uniqueFilePath("init-overflow-numParts")
 
     val ex = intercept[WebApplicationException] {
-      datasetResource.multipartUpload(
+      assetResource.multipartUpload(
         "init",
         ownerUser.getEmail,
-        multipartDataset.getName,
+        multipartAsset.getName,
         urlEnc(filePath),
         Optional.of(java.lang.Long.valueOf(totalMaxBytes)),
         Optional.of(java.lang.Long.valueOf(MinNonFinalPartBytes.toLong)),
@@ -1292,10 +1301,10 @@ class DatasetResourceSpec
   it should "reject invalid type parameter" in {
     val filePath = uniqueFilePath("init-bad-type")
     val ex = intercept[BadRequestException] {
-      datasetResource.multipartUpload(
+      assetResource.multipartUpload(
         "not-a-real-type",
         ownerUser.getEmail,
-        multipartDataset.getName,
+        multipartAsset.getName,
         urlEnc(filePath),
         Optional.empty(),
         Optional.empty(),
@@ -1367,12 +1376,12 @@ class DatasetResourceSpec
     try {
       val locking = DSL.using(connection, SQLDialect.POSTGRES)
       locking
-        .selectFrom(DATASET_UPLOAD_SESSION)
+        .selectFrom(ASSET_UPLOAD_SESSION)
         .where(
-          DATASET_UPLOAD_SESSION.UID
+          ASSET_UPLOAD_SESSION.UID
             .eq(ownerUser.getUid)
-            .and(DATASET_UPLOAD_SESSION.DID.eq(multipartDataset.getDid))
-            .and(DATASET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
+            .and(ASSET_UPLOAD_SESSION.AID.eq(multipartAsset.getAid))
+            .and(ASSET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
         )
         .forUpdate()
         .fetchOne()
@@ -1500,7 +1509,7 @@ class DatasetResourceSpec
 
     finishUpload(filePath).getStatus shouldEqual 200
     // If anything "accepted" the extra bytes, the committed object would exceed declared size.
-    val repoName = multipartDataset.getRepositoryName
+    val repoName = multipartAsset.getRepositoryName
     val downloaded = LakeFSStorageClient.getFileFromRepo(repoName, "main", filePath)
     Files.size(Paths.get(downloaded.toURI)) shouldEqual declared.toLong
 
@@ -1513,9 +1522,9 @@ class DatasetResourceSpec
     val httpHeaders = mkHeaders(1L)
 
     val ex1 = intercept[BadRequestException] {
-      datasetResource.uploadPart(
+      assetResource.uploadPart(
         ownerUser.getEmail,
-        multipartDataset.getName,
+        multipartAsset.getName,
         null,
         1,
         new ByteArrayInputStream(Array.emptyByteArray),
@@ -1526,9 +1535,9 @@ class DatasetResourceSpec
     assertStatus(ex1, 400)
 
     val ex2 = intercept[BadRequestException] {
-      datasetResource.uploadPart(
+      assetResource.uploadPart(
         ownerUser.getEmail,
-        multipartDataset.getName,
+        multipartAsset.getName,
         "",
         1,
         new ByteArrayInputStream(Array.emptyByteArray),
@@ -1571,7 +1580,7 @@ class DatasetResourceSpec
     fetchPartRows(uploadId).find(_.getPartNumber == 1).get.getEtag shouldEqual ""
   }
 
-  it should "upload a part successfully and persist its ETag into DATASET_UPLOAD_SESSION_PART" in {
+  it should "upload a part successfully and persist its ETag into ASSET_UPLOAD_SESSION_PART" in {
     val filePath = uniqueFilePath("part-happy-db")
     initUpload(filePath, numParts = 2)
 
@@ -1610,11 +1619,11 @@ class DatasetResourceSpec
     try {
       val locking = DSL.using(connection, SQLDialect.POSTGRES)
       locking
-        .selectFrom(DATASET_UPLOAD_SESSION_PART)
+        .selectFrom(ASSET_UPLOAD_SESSION_PART)
         .where(
-          DATASET_UPLOAD_SESSION_PART.UPLOAD_ID
+          ASSET_UPLOAD_SESSION_PART.UPLOAD_ID
             .eq(uploadId)
-            .and(DATASET_UPLOAD_SESSION_PART.PART_NUMBER.eq(1))
+            .and(ASSET_UPLOAD_SESSION_PART.PART_NUMBER.eq(1))
         )
         .forUpdate()
         .fetchOne()
@@ -1643,11 +1652,11 @@ class DatasetResourceSpec
     try {
       val locking = DSL.using(connection, SQLDialect.POSTGRES)
       locking
-        .selectFrom(DATASET_UPLOAD_SESSION_PART)
+        .selectFrom(ASSET_UPLOAD_SESSION_PART)
         .where(
-          DATASET_UPLOAD_SESSION_PART.UPLOAD_ID
+          ASSET_UPLOAD_SESSION_PART.UPLOAD_ID
             .eq(uploadId)
-            .and(DATASET_UPLOAD_SESSION_PART.PART_NUMBER.eq(1))
+            .and(ASSET_UPLOAD_SESSION_PART.PART_NUMBER.eq(1))
         )
         .forUpdate()
         .fetchOne()
@@ -1694,7 +1703,7 @@ class DatasetResourceSpec
 
     finishUpload(filePath).getStatus shouldEqual 200
 
-    val repoName = multipartDataset.getRepositoryName
+    val repoName = multipartAsset.getRepositoryName
     val downloaded = LakeFSStorageClient.getFileFromRepo(repoName, "main", filePath)
     val gotBytes = Files.readAllBytes(Paths.get(downloaded.toURI))
 
@@ -1716,11 +1725,11 @@ class DatasetResourceSpec
 
     // Allow init + part upload under a higher limit.
     setMaxUploadMiB(3) // 3 MiB
-    datasetResource
+    assetResource
       .multipartUpload(
         "init",
         ownerUser.getEmail,
-        multipartDataset.getName,
+        multipartAsset.getName,
         urlEnc(filePath),
         Optional.of(java.lang.Long.valueOf(twoMiB)),
         Optional.of(java.lang.Long.valueOf(twoMiB)),
@@ -1740,7 +1749,7 @@ class DatasetResourceSpec
     ex.getResponse.getStatus shouldEqual 413
 
     // Oversized objects must not remain accessible after finish (rollback happened).
-    val repoName = multipartDataset.getRepositoryName
+    val repoName = multipartAsset.getRepositoryName
     val notFound = intercept[ApiException] {
       LakeFSStorageClient.getFileFromRepo(repoName, "main", filePath)
     }
@@ -1785,10 +1794,10 @@ class DatasetResourceSpec
     val uploadId = sessionRecord.getUploadId
 
     getDSLContext
-      .insertInto(DATASET_UPLOAD_SESSION_PART)
-      .set(DATASET_UPLOAD_SESSION_PART.UPLOAD_ID, uploadId)
-      .set(DATASET_UPLOAD_SESSION_PART.PART_NUMBER, Integer.valueOf(3))
-      .set(DATASET_UPLOAD_SESSION_PART.ETAG, "bogus-etag")
+      .insertInto(ASSET_UPLOAD_SESSION_PART)
+      .set(ASSET_UPLOAD_SESSION_PART.UPLOAD_ID, uploadId)
+      .set(ASSET_UPLOAD_SESSION_PART.PART_NUMBER, Integer.valueOf(3))
+      .set(ASSET_UPLOAD_SESSION_PART.ETAG, "bogus-etag")
       .execute()
 
     val ex = intercept[WebApplicationException] { finishUpload(filePath) }
@@ -1849,12 +1858,12 @@ class DatasetResourceSpec
     try {
       val locking = DSL.using(connection, SQLDialect.POSTGRES)
       locking
-        .selectFrom(DATASET_UPLOAD_SESSION)
+        .selectFrom(ASSET_UPLOAD_SESSION)
         .where(
-          DATASET_UPLOAD_SESSION.UID
+          ASSET_UPLOAD_SESSION.UID
             .eq(ownerUser.getUid)
-            .and(DATASET_UPLOAD_SESSION.DID.eq(multipartDataset.getDid))
-            .and(DATASET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
+            .and(ASSET_UPLOAD_SESSION.AID.eq(multipartAsset.getAid))
+            .and(ASSET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
         )
         .forUpdate()
         .fetchOne()
@@ -1910,12 +1919,12 @@ class DatasetResourceSpec
     try {
       val locking = DSL.using(connection, SQLDialect.POSTGRES)
       locking
-        .selectFrom(DATASET_UPLOAD_SESSION)
+        .selectFrom(ASSET_UPLOAD_SESSION)
         .where(
-          DATASET_UPLOAD_SESSION.UID
+          ASSET_UPLOAD_SESSION.UID
             .eq(ownerUser.getUid)
-            .and(DATASET_UPLOAD_SESSION.DID.eq(multipartDataset.getDid))
-            .and(DATASET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
+            .and(ASSET_UPLOAD_SESSION.AID.eq(multipartAsset.getAid))
+            .and(ASSET_UPLOAD_SESSION.FILE_PATH.eq(filePath))
         )
         .forUpdate()
         .fetchOne()
@@ -1984,12 +1993,12 @@ class DatasetResourceSpec
     val uploadId = fetchUploadIdOrFail(filePath)
 
     getDSLContext
-      .update(DATASET_UPLOAD_SESSION_PART)
-      .set(DATASET_UPLOAD_SESSION_PART.ETAG, "definitely-not-a-real-etag")
+      .update(ASSET_UPLOAD_SESSION_PART)
+      .set(ASSET_UPLOAD_SESSION_PART.ETAG, "definitely-not-a-real-etag")
       .where(
-        DATASET_UPLOAD_SESSION_PART.UPLOAD_ID
+        ASSET_UPLOAD_SESSION_PART.UPLOAD_ID
           .eq(uploadId)
-          .and(DATASET_UPLOAD_SESSION_PART.PART_NUMBER.eq(1))
+          .and(ASSET_UPLOAD_SESSION_PART.PART_NUMBER.eq(1))
       )
       .execute()
 
@@ -2093,12 +2102,12 @@ class DatasetResourceSpec
 
       val uploadId = fetchUploadIdOrFail(filePath)
       getDSLContext
-        .update(DATASET_UPLOAD_SESSION_PART)
-        .set(DATASET_UPLOAD_SESSION_PART.ETAG, "definitely-not-a-real-etag")
+        .update(ASSET_UPLOAD_SESSION_PART)
+        .set(ASSET_UPLOAD_SESSION_PART.ETAG, "definitely-not-a-real-etag")
         .where(
-          DATASET_UPLOAD_SESSION_PART.UPLOAD_ID
+          ASSET_UPLOAD_SESSION_PART.UPLOAD_ID
             .eq(uploadId)
-            .and(DATASET_UPLOAD_SESSION_PART.PART_NUMBER.eq(1))
+            .and(ASSET_UPLOAD_SESSION_PART.PART_NUMBER.eq(1))
         )
         .execute()
 
@@ -2130,7 +2139,7 @@ class DatasetResourceSpec
 
     val expected = sha256OfChunks(Seq(part1, part2, part3))
 
-    val repoName = multipartDataset.getRepositoryName
+    val repoName = multipartAsset.getRepositoryName
     val ref = "main"
     val downloaded = LakeFSStorageClient.getFileFromRepo(repoName, ref, filePath)
 
@@ -2157,7 +2166,7 @@ class DatasetResourceSpec
 
     finishUpload(filePath).getStatus shouldEqual 200
 
-    val repoName = multipartDataset.getRepositoryName
+    val repoName = multipartAsset.getRepositoryName
     val ref = "main"
     val downloaded = LakeFSStorageClient.getFileFromRepo(repoName, ref, filePath)
 
@@ -2242,11 +2251,11 @@ class DatasetResourceSpec
     )
 
     maliciousPaths.foreach { path =>
-      val request = DatasetResource.CoverImageRequest(path)
+      val request = AssetResource.CoverImageRequest(path)
 
       assertThrows[BadRequestException] {
-        datasetResource.updateDatasetCoverImage(
-          baseDataset.getDid,
+        assetResource.updateDatasetCoverImage(
+          baseAsset.getAid,
           request,
           sessionUser
         )
@@ -2261,11 +2270,11 @@ class DatasetResourceSpec
     )
 
     absolutePaths.foreach { path =>
-      val request = DatasetResource.CoverImageRequest(path)
+      val request = AssetResource.CoverImageRequest(path)
 
       assertThrows[BadRequestException] {
-        datasetResource.updateDatasetCoverImage(
-          baseDataset.getDid,
+        assetResource.updateDatasetCoverImage(
+          baseAsset.getAid,
           request,
           sessionUser
         )
@@ -2281,11 +2290,11 @@ class DatasetResourceSpec
     )
 
     invalidPaths.foreach { path =>
-      val request = DatasetResource.CoverImageRequest(path)
+      val request = AssetResource.CoverImageRequest(path)
 
       assertThrows[BadRequestException] {
-        datasetResource.updateDatasetCoverImage(
-          baseDataset.getDid,
+        assetResource.updateDatasetCoverImage(
+          baseAsset.getAid,
           request,
           sessionUser
         )
@@ -2295,28 +2304,28 @@ class DatasetResourceSpec
 
   it should "reject empty or null cover image path" in {
     assertThrows[BadRequestException] {
-      datasetResource.updateDatasetCoverImage(
-        baseDataset.getDid,
-        DatasetResource.CoverImageRequest(""),
+      assetResource.updateDatasetCoverImage(
+        baseAsset.getAid,
+        AssetResource.CoverImageRequest(""),
         sessionUser
       )
     }
 
     assertThrows[BadRequestException] {
-      datasetResource.updateDatasetCoverImage(
-        baseDataset.getDid,
-        DatasetResource.CoverImageRequest(null),
+      assetResource.updateDatasetCoverImage(
+        baseAsset.getAid,
+        AssetResource.CoverImageRequest(null),
         sessionUser
       )
     }
   }
 
   it should "reject when user lacks WRITE access" in {
-    val request = DatasetResource.CoverImageRequest("v1/cover.jpg")
+    val request = AssetResource.CoverImageRequest("v1/cover.jpg")
 
     assertThrows[ForbiddenException] {
-      datasetResource.updateDatasetCoverImage(
-        baseDataset.getDid,
+      assetResource.updateDatasetCoverImage(
+        baseAsset.getAid,
         request,
         sessionUser2
       )
@@ -2324,65 +2333,65 @@ class DatasetResourceSpec
   }
 
   it should "set cover image successfully" in {
-    testDatasetVersion
+    testAssetVersion
 
-    val request = DatasetResource.CoverImageRequest(testCoverImagePath)
-    val response = datasetResource.updateDatasetCoverImage(
-      baseDataset.getDid,
+    val request = AssetResource.CoverImageRequest(testCoverImagePath)
+    val response = assetResource.updateDatasetCoverImage(
+      baseAsset.getAid,
       request,
       sessionUser
     )
 
     response.getStatus shouldEqual 200
 
-    val updated = datasetDao.fetchOneByDid(baseDataset.getDid)
+    val updated = assetDao.fetchOneByAid(baseAsset.getAid)
     updated.getCoverImage shouldEqual testCoverImagePath
   }
 
   "getDatasetCover" should "reject private dataset cover for anonymous users" in {
-    val dataset = datasetDao.fetchOneByDid(baseDataset.getDid)
-    dataset.setIsPublic(false)
-    dataset.setCoverImage("v1/cover.jpg")
-    datasetDao.update(dataset)
+    val asset = assetDao.fetchOneByAid(baseAsset.getAid)
+    asset.setIsPublic(false)
+    asset.setCoverImage("v1/cover.jpg")
+    assetDao.update(asset)
 
     assertThrows[ForbiddenException] {
-      datasetResource.getDatasetCover(baseDataset.getDid, Optional.empty())
+      assetResource.getDatasetCover(baseAsset.getAid, Optional.empty())
     }
   }
 
   it should "reject private dataset cover for users without access" in {
-    val dataset = datasetDao.fetchOneByDid(baseDataset.getDid)
-    dataset.setOwnerUid(ownerUser.getUid)
-    dataset.setIsPublic(false)
-    dataset.setCoverImage("v1/cover.jpg")
-    datasetDao.update(dataset)
+    val asset = assetDao.fetchOneByAid(baseAsset.getAid)
+    asset.setOwnerUid(ownerUser.getUid)
+    asset.setIsPublic(false)
+    asset.setCoverImage("v1/cover.jpg")
+    assetDao.update(asset)
 
     assertThrows[ForbiddenException] {
-      datasetResource.getDatasetCover(baseDataset.getDid, Optional.of(sessionUser2))
+      assetResource.getDatasetCover(baseAsset.getAid, Optional.of(sessionUser2))
     }
   }
 
   it should "return 404 when no cover image is set" in {
-    val dataset = datasetDao.fetchOneByDid(baseDataset.getDid)
-    dataset.setCoverImage(null)
-    dataset.setIsPublic(true)
-    datasetDao.update(dataset)
+    val asset = assetDao.fetchOneByAid(baseAsset.getAid)
+    asset.setCoverImage(null)
+    asset.setIsPublic(true)
+    assetDao.update(asset)
 
     assertThrows[NotFoundException] {
-      datasetResource.getDatasetCover(baseDataset.getDid, Optional.of(sessionUser))
+      assetResource.getDatasetCover(baseAsset.getAid, Optional.of(sessionUser))
     }
   }
 
   it should "get cover image successfully with 307 redirect" in {
-    testDatasetVersion
+    testAssetVersion
 
-    val dataset = datasetDao.fetchOneByDid(baseDataset.getDid)
-    dataset.setIsPublic(true)
-    dataset.setCoverImage(testCoverImagePath)
-    datasetDao.update(dataset)
+    val asset = assetDao.fetchOneByAid(baseAsset.getAid)
+    asset.setIsPublic(true)
+    asset.setCoverImage(testCoverImagePath)
+    assetDao.update(asset)
 
-    val response = datasetResource.getDatasetCover(
-      baseDataset.getDid,
+    val response = assetResource.getDatasetCover(
+      baseAsset.getAid,
       Optional.empty()
     )
 
@@ -2399,9 +2408,9 @@ class DatasetResourceSpec
 
     val uploadId = fetchUploadIdOrFail(filePath)
     getDSLContext
-      .update(DATASET_UPLOAD_SESSION_PART)
-      .set(DATASET_UPLOAD_SESSION_PART.ETAG, "BAD")
-      .where(DATASET_UPLOAD_SESSION_PART.UPLOAD_ID.eq(uploadId))
+      .update(ASSET_UPLOAD_SESSION_PART)
+      .set(ASSET_UPLOAD_SESSION_PART.ETAG, "BAD")
+      .where(ASSET_UPLOAD_SESSION_PART.UPLOAD_ID.eq(uploadId))
       .execute()
 
     val ex = intercept[WebApplicationException] {
@@ -2426,9 +2435,9 @@ class DatasetResourceSpec
     val uploadId = fetchUploadIdOrFail(filePath)
 
     getDSLContext
-      .update(DATASET_UPLOAD_SESSION)
-      .set(DATASET_UPLOAD_SESSION.PHYSICAL_ADDRESS, "BAD")
-      .where(DATASET_UPLOAD_SESSION.UPLOAD_ID.eq(uploadId))
+      .update(ASSET_UPLOAD_SESSION)
+      .set(ASSET_UPLOAD_SESSION.PHYSICAL_ADDRESS, "BAD")
+      .where(ASSET_UPLOAD_SESSION.UPLOAD_ID.eq(uploadId))
       .execute()
 
     val ex = intercept[WebApplicationException] { finishUpload(filePath) }

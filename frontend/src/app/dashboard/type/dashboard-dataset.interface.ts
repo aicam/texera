@@ -22,7 +22,7 @@ import { Dataset } from "../../common/type/dataset";
 export interface DashboardDataset {
   isOwner: boolean;
   ownerEmail: string;
-  dataset: Dataset;
+  asset: Dataset;
   accessPrivilege: "READ" | "WRITE" | "NONE";
   size: number;
 }

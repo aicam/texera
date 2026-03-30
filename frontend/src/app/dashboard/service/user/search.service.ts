@@ -134,7 +134,7 @@ export class SearchService {
       switchMap(results => {
         const hasMismatch = type === "dataset" ? results.hasMismatch ?? false : undefined;
         const filteredResults =
-          type === "dataset" ? results.results.filter(i => i !== null && i.dataset != null) : results.results;
+          type === "dataset" ? results.results.filter(i => i !== null && i.asset != null && i.asset.asset != null) : results.results;
 
         return this.extendSearchResultsWithHubActivityInfo(filteredResults, isLogin).pipe(
           map(entries => ({
@@ -172,7 +172,7 @@ export class SearchService {
     items.forEach(i => {
       if (i.project) userIds.add(i.project.ownerId);
       else if (i.workflow) userIds.add(i.workflow.ownerId);
-      else if (i.dataset?.dataset?.ownerUid != null) userIds.add(i.dataset.dataset.ownerUid);
+      else if (i.asset?.asset?.ownerUid != null) userIds.add(i.asset.asset.ownerUid);
     });
     const userInfo$ = userIds.size ? this.getUserInfo(Array.from(userIds)) : of({} as Record<number, UserInfo>);
 
@@ -185,9 +185,9 @@ export class SearchService {
       } else if (i.project) {
         entityTypes.push(EntityType.Project);
         entityIds.push(i.project.pid);
-      } else if (i.dataset?.dataset?.did != null) {
+      } else if (i.asset?.asset?.aid != null) {
         entityTypes.push(EntityType.Dataset);
-        entityIds.push(i.dataset.dataset.did);
+        entityIds.push(i.asset.asset.aid);
       }
     });
 
@@ -224,14 +224,14 @@ export class SearchService {
             ? new DashboardEntry(i.workflow)
             : i.project
               ? new DashboardEntry(i.project)
-              : new DashboardEntry(i.dataset!);
+              : new DashboardEntry(i.asset!);
 
           const key = `${entry.type}:${entry.id}`;
           const ownerId = i.workflow
             ? i.workflow.ownerId
             : i.project
               ? i.project.ownerId
-              : i.dataset!.dataset!.ownerUid!;
+              : i.asset!.asset!.ownerUid!;
           const ui = (userMap as any)[ownerId];
           if (ui) {
             entry.setOwnerName(ui.userName);

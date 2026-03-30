@@ -109,7 +109,7 @@ export class ShareAccessComponent implements OnInit, OnDestroy {
         .getDataset(this.id)
         .pipe(untilDestroyed(this))
         .subscribe(dashboardDataset => {
-          this.isPublic = dashboardDataset.dataset.isPublic;
+          this.isPublic = dashboardDataset.asset.isPublic;
         });
     }
   }

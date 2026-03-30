@@ -35,5 +35,5 @@ export function isDashboardFile(value: any): value is DashboardFile {
 }
 
 export function isDashboardDataset(value: any): value is DashboardDataset {
-  return value && typeof value.dataset === "object";
+  return value && typeof value.asset === "object";
 }

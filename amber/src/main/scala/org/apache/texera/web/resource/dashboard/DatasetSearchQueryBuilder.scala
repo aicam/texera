@@ -21,17 +21,17 @@ package org.apache.texera.web.resource.dashboard
 
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.texera.amber.core.storage.util.LakeFSStorageClient
-import org.apache.texera.dao.jooq.generated.Tables.{DATASET, DATASET_USER_ACCESS}
+import org.apache.texera.dao.jooq.generated.Tables.{ASSET, ASSET_USER_ACCESS}
 import org.apache.texera.dao.jooq.generated.enums.PrivilegeEnum
 import org.apache.texera.dao.jooq.generated.tables.User.USER
-import org.apache.texera.dao.jooq.generated.tables.pojos.{Dataset, User}
+import org.apache.texera.dao.jooq.generated.tables.pojos.{Asset, User}
 import org.apache.texera.web.resource.dashboard.DashboardResource.DashboardClickableFileEntry
 import org.apache.texera.web.resource.dashboard.FulltextSearchQueryUtils.{
   getContainsFilter,
   getDateFilter,
   getFullTextSearchFilter
 }
-import org.apache.texera.web.resource.dashboard.user.dataset.DatasetResource.DashboardDataset
+import org.apache.texera.web.resource.dashboard.user.dataset.AssetResource.DashboardAsset
 import org.jooq.impl.DSL
 import org.jooq.{Condition, GroupField, Record, TableLike}
 
@@ -40,15 +40,15 @@ import scala.jdk.CollectionConverters.CollectionHasAsScala
 object DatasetSearchQueryBuilder extends SearchQueryBuilder with LazyLogging {
   override protected val mappedResourceSchema: UnifiedResourceSchema = UnifiedResourceSchema(
     resourceType = DSL.inline(SearchQueryBuilder.DATASET_RESOURCE_TYPE),
-    name = DATASET.NAME,
-    description = DATASET.DESCRIPTION,
-    creationTime = DATASET.CREATION_TIME,
-    ownerId = DATASET.OWNER_UID,
-    did = DATASET.DID,
-    repositoryName = DATASET.REPOSITORY_NAME,
-    isDatasetPublic = DATASET.IS_PUBLIC,
-    isDatasetDownloadable = DATASET.IS_DOWNLOADABLE,
-    datasetUserAccess = DATASET_USER_ACCESS.PRIVILEGE
+    name = ASSET.NAME,
+    description = ASSET.DESCRIPTION,
+    creationTime = ASSET.CREATION_TIME,
+    ownerId = ASSET.OWNER_UID,
+    did = ASSET.AID,
+    repositoryName = ASSET.REPOSITORY_NAME,
+    isDatasetPublic = ASSET.IS_PUBLIC,
+    isDatasetDownloadable = ASSET.IS_DOWNLOADABLE,
+    datasetUserAccess = ASSET_USER_ACCESS.PRIVILEGE
   )
 
   /*
@@ -65,11 +65,11 @@ object DatasetSearchQueryBuilder extends SearchQueryBuilder with LazyLogging {
       params: DashboardResource.SearchQueryParams,
       includePublic: Boolean = false
   ): TableLike[_] = {
-    val baseJoin = DATASET
-      .leftJoin(DATASET_USER_ACCESS)
-      .on(DATASET_USER_ACCESS.DID.eq(DATASET.DID))
+    val baseJoin = ASSET
+      .leftJoin(ASSET_USER_ACCESS)
+      .on(ASSET_USER_ACCESS.AID.eq(ASSET.AID))
       .leftJoin(USER)
-      .on(USER.UID.eq(DATASET.OWNER_UID))
+      .on(USER.UID.eq(ASSET.OWNER_UID))
 
     // Default condition starts as true, ensuring all datasets are selected initially.
     var condition: Condition = DSL.trueCondition()
@@ -77,14 +77,14 @@ object DatasetSearchQueryBuilder extends SearchQueryBuilder with LazyLogging {
     if (uid == null) {
       // If `uid` is null, the user is not logged in or performing a public search
       // We only select datasets marked as public
-      condition = DATASET.IS_PUBLIC.eq(true)
+      condition = ASSET.IS_PUBLIC.eq(true)
     } else {
       // When `uid` is present, we add a condition to only include datasets with direct user access.
-      val userAccessCondition = DATASET_USER_ACCESS.UID.eq(uid)
+      val userAccessCondition = ASSET_USER_ACCESS.UID.eq(uid)
 
       if (includePublic) {
         // If `includePublic` is true, we extend visibility to public datasets as well.
-        condition = userAccessCondition.or(DATASET.IS_PUBLIC.eq(true))
+        condition = userAccessCondition.or(ASSET.IS_PUBLIC.eq(true))
       } else {
         condition = userAccessCondition
       }
@@ -104,11 +104,11 @@ object DatasetSearchQueryBuilder extends SearchQueryBuilder with LazyLogging {
     getDateFilter(
       params.creationStartDate,
       params.creationEndDate,
-      DATASET.CREATION_TIME
+      ASSET.CREATION_TIME
     )
-      .and(getContainsFilter(params.datasetIds, DATASET.DID))
+      .and(getContainsFilter(params.datasetIds, ASSET.AID))
       .and(
-        getFullTextSearchFilter(splitKeywords, List(DATASET.NAME, DATASET.DESCRIPTION))
+        getFullTextSearchFilter(splitKeywords, List(ASSET.NAME, ASSET.DESCRIPTION))
       )
   }
 
@@ -120,32 +120,32 @@ object DatasetSearchQueryBuilder extends SearchQueryBuilder with LazyLogging {
       uid: Integer,
       record: Record
   ): DashboardResource.DashboardClickableFileEntry = {
-    val dataset = record.into(DATASET).into(classOf[Dataset])
+    val asset = record.into(ASSET).into(classOf[Asset])
     val owner = record.into(USER).into(classOf[User])
     var size = 0L
 
     try {
-      size = LakeFSStorageClient.retrieveRepositorySize(dataset.getRepositoryName)
+      size = LakeFSStorageClient.retrieveRepositorySize(asset.getRepositoryName)
     } catch {
       case e: io.lakefs.clients.sdk.ApiException =>
         // Treat all LakeFS ApiException as mismatch (repository not found, being deleted, or any fatal error)
         logger.error(
-          s"LakeFS ApiException for dataset repository '${dataset.getRepositoryName}': ${e.getMessage}",
+          s"LakeFS ApiException for dataset repository '${asset.getRepositoryName}': ${e.getMessage}",
           e
         )
         return null
     }
 
-    val dd = DashboardDataset(
-      dataset,
+    val dd = DashboardAsset(
+      asset,
       owner.getEmail,
-      record.get(DATASET_USER_ACCESS.PRIVILEGE, classOf[PrivilegeEnum]),
-      dataset.getOwnerUid == uid,
+      record.get(ASSET_USER_ACCESS.PRIVILEGE, classOf[PrivilegeEnum]),
+      asset.getOwnerUid == uid,
       size
     )
     DashboardClickableFileEntry(
       resourceType = SearchQueryBuilder.DATASET_RESOURCE_TYPE,
-      dataset = Some(dd)
+      asset = Some(dd)
     )
   }
 }

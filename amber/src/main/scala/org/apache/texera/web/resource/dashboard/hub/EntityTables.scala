@@ -42,10 +42,10 @@ object EntityTables {
     }
 
     case object DatasetTable extends BaseEntityTable {
-      override type R = DatasetRecord
-      override val table: Table[DatasetRecord] = DATASET
-      override val isPublicColumn: TableField[DatasetRecord, java.lang.Boolean] = DATASET.IS_PUBLIC
-      override val idColumn: TableField[DatasetRecord, Integer] = DATASET.DID
+      override type R = AssetRecord
+      override val table: Table[AssetRecord] = ASSET
+      override val isPublicColumn: TableField[AssetRecord, java.lang.Boolean] = ASSET.IS_PUBLIC
+      override val idColumn: TableField[AssetRecord, Integer] = ASSET.AID
     }
 
     def apply(entityType: EntityType): BaseEntityTable =
@@ -76,11 +76,11 @@ object EntityTables {
     }
 
     case object DatasetLikeTable extends LikeTable {
-      override type R = DatasetUserLikesRecord
-      override val table: Table[DatasetUserLikesRecord] = DATASET_USER_LIKES
-      override val uidColumn: TableField[DatasetUserLikesRecord, Integer] =
-        DATASET_USER_LIKES.UID
-      override val idColumn: TableField[DatasetUserLikesRecord, Integer] = DATASET_USER_LIKES.DID
+      override type R = AssetUserLikesRecord
+      override val table: Table[AssetUserLikesRecord] = ASSET_USER_LIKES
+      override val uidColumn: TableField[AssetUserLikesRecord, Integer] =
+        ASSET_USER_LIKES.UID
+      override val idColumn: TableField[AssetUserLikesRecord, Integer] = ASSET_USER_LIKES.AID
     }
 
     def apply(entityType: EntityType): LikeTable =
@@ -129,11 +129,11 @@ object EntityTables {
     }
 
     case object DatasetViewCountTable extends ViewCountTable {
-      override type R = DatasetViewCountRecord
-      override val table: Table[DatasetViewCountRecord] = DATASET_VIEW_COUNT
-      override val idColumn: TableField[DatasetViewCountRecord, Integer] = DATASET_VIEW_COUNT.DID
-      override val viewCountColumn: TableField[DatasetViewCountRecord, Integer] =
-        DATASET_VIEW_COUNT.VIEW_COUNT
+      override type R = AssetViewCountRecord
+      override val table: Table[AssetViewCountRecord] = ASSET_VIEW_COUNT
+      override val idColumn: TableField[AssetViewCountRecord, Integer] = ASSET_VIEW_COUNT.AID
+      override val viewCountColumn: TableField[AssetViewCountRecord, Integer] =
+        ASSET_VIEW_COUNT.VIEW_COUNT
     }
 
     def apply(entityType: EntityType): ViewCountTable =

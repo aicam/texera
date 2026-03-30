@@ -20,8 +20,8 @@
 import { DatasetFileNode } from "./datasetVersionFileTree";
 
 export interface DatasetVersion {
-  dvid: number | undefined;
-  did: number;
+  avid: number | undefined;
+  aid: number;
   creatorUid: number;
   name: string;
   versionHash: string | undefined;
@@ -30,9 +30,10 @@ export interface DatasetVersion {
 }
 
 export interface Dataset {
-  did: number | undefined;
+  aid: number | undefined;
   ownerUid: number | undefined;
   name: string;
+  type: string;
   isPublic: boolean;
   isDownloadable: boolean;
   storagePath: string | undefined;

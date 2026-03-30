@@ -28,10 +28,10 @@ import org.apache.texera.dao.SqlServer
 import org.apache.texera.dao.SqlServer.withTransaction
 import org.apache.texera.dao.jooq.generated.Tables.USER
 import org.apache.texera.dao.jooq.generated.enums.PrivilegeEnum
-import org.apache.texera.dao.jooq.generated.tables.DatasetUserAccess.DATASET_USER_ACCESS
-import org.apache.texera.dao.jooq.generated.tables.daos.{DatasetDao, DatasetUserAccessDao, UserDao}
-import org.apache.texera.dao.jooq.generated.tables.pojos.{DatasetUserAccess, User}
-import org.apache.texera.service.resource.DatasetAccessResource.{
+import org.apache.texera.dao.jooq.generated.tables.AssetUserAccess.ASSET_USER_ACCESS
+import org.apache.texera.dao.jooq.generated.tables.daos.{AssetDao, AssetUserAccessDao, UserDao}
+import org.apache.texera.dao.jooq.generated.tables.pojos.{AssetUserAccess, User}
+import org.apache.texera.service.resource.AssetAccessResource.{
   AccessEntry,
   context,
   getOwner,
@@ -41,61 +41,61 @@ import org.jooq.{DSLContext, EnumType}
 
 import javax.ws.rs.ForbiddenException
 
-object DatasetAccessResource {
+object AssetAccessResource {
   private def context: DSLContext =
     SqlServer
       .getInstance()
       .createDSLContext()
 
-  def isDatasetPublic(ctx: DSLContext, did: Integer): Boolean = {
-    val datasetDao = new DatasetDao(ctx.configuration())
-    Option(datasetDao.fetchOneByDid(did))
-      .flatMap(dataset => Option(dataset.getIsPublic))
+  def isAssetPublic(ctx: DSLContext, aid: Integer): Boolean = {
+    val assetDao = new AssetDao(ctx.configuration())
+    Option(assetDao.fetchOneByAid(aid))
+      .flatMap(asset => Option(asset.getIsPublic))
       .contains(true)
   }
 
-  def userHasReadAccess(ctx: DSLContext, did: Integer, uid: Integer): Boolean = {
-    isDatasetPublic(ctx, did) ||
-    userHasWriteAccess(ctx, did, uid) ||
-    getDatasetUserAccessPrivilege(ctx, did, uid) == PrivilegeEnum.READ
+  def userHasReadAccess(ctx: DSLContext, aid: Integer, uid: Integer): Boolean = {
+    isAssetPublic(ctx, aid) ||
+    userHasWriteAccess(ctx, aid, uid) ||
+    getAssetUserAccessPrivilege(ctx, aid, uid) == PrivilegeEnum.READ
   }
 
-  def userOwnDataset(ctx: DSLContext, did: Integer, uid: Integer): Boolean = {
-    val datasetDao = new DatasetDao(ctx.configuration())
+  def userOwnAsset(ctx: DSLContext, aid: Integer, uid: Integer): Boolean = {
+    val assetDao = new AssetDao(ctx.configuration())
 
-    Option(datasetDao.fetchOneByDid(did))
+    Option(assetDao.fetchOneByAid(aid))
       .exists(_.getOwnerUid == uid)
   }
 
-  def userHasWriteAccess(ctx: DSLContext, did: Integer, uid: Integer): Boolean = {
-    userOwnDataset(ctx, did, uid) ||
-    getDatasetUserAccessPrivilege(ctx, did, uid) == PrivilegeEnum.WRITE
+  def userHasWriteAccess(ctx: DSLContext, aid: Integer, uid: Integer): Boolean = {
+    userOwnAsset(ctx, aid, uid) ||
+    getAssetUserAccessPrivilege(ctx, aid, uid) == PrivilegeEnum.WRITE
   }
 
-  def getDatasetUserAccessPrivilege(
+  def getAssetUserAccessPrivilege(
       ctx: DSLContext,
-      did: Integer,
+      aid: Integer,
       uid: Integer
   ): PrivilegeEnum = {
     Option(
       ctx
-        .select(DATASET_USER_ACCESS.PRIVILEGE)
-        .from(DATASET_USER_ACCESS)
+        .select(ASSET_USER_ACCESS.PRIVILEGE)
+        .from(ASSET_USER_ACCESS)
         .where(
-          DATASET_USER_ACCESS.DID
-            .eq(did)
-            .and(DATASET_USER_ACCESS.UID.eq(uid))
+          ASSET_USER_ACCESS.AID
+            .eq(aid)
+            .and(ASSET_USER_ACCESS.UID.eq(uid))
         )
         .fetchOneInto(classOf[PrivilegeEnum])
     ).getOrElse(PrivilegeEnum.NONE)
   }
 
-  def getOwner(ctx: DSLContext, did: Integer): User = {
-    val datasetDao = new DatasetDao(ctx.configuration())
+  def getOwner(ctx: DSLContext, aid: Integer): User = {
+    val assetDao = new AssetDao(ctx.configuration())
     val userDao = new UserDao(ctx.configuration())
 
-    Option(datasetDao.fetchOneByDid(did))
-      .flatMap(dataset => Option(dataset.getOwnerUid))
+    Option(assetDao.fetchOneByAid(aid))
+      .flatMap(asset => Option(asset.getOwnerUid))
       .map(ownerUid => userDao.fetchOneByUid(ownerUid))
       .orNull
   }
@@ -106,21 +106,21 @@ object DatasetAccessResource {
 
 @Produces(Array(MediaType.APPLICATION_JSON))
 @RolesAllowed(Array("REGULAR", "ADMIN"))
-@Path("/access/dataset")
-class DatasetAccessResource {
+@Path("/access/asset")
+class AssetAccessResource {
 
   /**
-    * This method returns the owner of a dataset
+    * This method returns the owner of an asset
     *
-    * @param did ,  dataset id
+    * @param aid ,  asset id
     * @return ownerEmail,  the owner's email
     */
   @GET
-  @Path("/owner/{did}")
-  def getOwnerEmailOfDataset(@PathParam("did") did: Integer): String = {
+  @Path("/owner/{aid}")
+  def getOwnerEmailOfAsset(@PathParam("aid") aid: Integer): String = {
     var email = ""
     withTransaction(context) { ctx =>
-      val owner = getOwner(ctx, did)
+      val owner = getOwner(ctx, aid)
       if (owner != null) {
         email = owner.getEmail
       }
@@ -129,61 +129,61 @@ class DatasetAccessResource {
   }
 
   /**
-    * Returns information about all current shared access of the given dataset
+    * Returns information about all current shared access of the given asset
     *
-    * @param did dataset id
+    * @param aid asset id
     * @return a List of email/name/permission
     */
   @GET
-  @Path("/list/{did}")
+  @Path("/list/{aid}")
   def getAccessList(
-      @PathParam("did") did: Integer
+      @PathParam("aid") aid: Integer
   ): java.util.List[AccessEntry] = {
     withTransaction(context) { ctx =>
-      val datasetDao = new DatasetDao(ctx.configuration())
+      val assetDao = new AssetDao(ctx.configuration())
       ctx
         .select(
           USER.EMAIL,
           USER.NAME,
-          DATASET_USER_ACCESS.PRIVILEGE
+          ASSET_USER_ACCESS.PRIVILEGE
         )
-        .from(DATASET_USER_ACCESS)
+        .from(ASSET_USER_ACCESS)
         .join(USER)
-        .on(USER.UID.eq(DATASET_USER_ACCESS.UID))
+        .on(USER.UID.eq(ASSET_USER_ACCESS.UID))
         .where(
-          DATASET_USER_ACCESS.DID
-            .eq(did)
-            .and(DATASET_USER_ACCESS.UID.notEqual(datasetDao.fetchOneByDid(did).getOwnerUid))
+          ASSET_USER_ACCESS.AID
+            .eq(aid)
+            .and(ASSET_USER_ACCESS.UID.notEqual(assetDao.fetchOneByAid(aid).getOwnerUid))
         )
         .fetchInto(classOf[AccessEntry])
     }
   }
 
   /**
-    * This method shares a dataset to a user with a specific access type
+    * This method shares an asset to a user with a specific access type
     *
-    * @param did       the given dataset
+    * @param aid       the given asset
     * @param email     the email which the access is given to
     * @param privilege the type of Access given to the target user
     * @return rejection if user not permitted to share the workflow or Success Message
     */
   @PUT
-  @Path("/grant/{did}/{email}/{privilege}")
+  @Path("/grant/{aid}/{email}/{privilege}")
   def grantAccess(
-      @PathParam("did") did: Integer,
+      @PathParam("aid") aid: Integer,
       @PathParam("email") email: String,
       @PathParam("privilege") privilege: String,
       @Auth user: SessionUser
   ): Response = {
     withTransaction(context) { ctx =>
-      if (!userHasWriteAccess(ctx, did, user.getUid)) {
-        throw new ForbiddenException(s"You do not have permission to modify dataset $did")
+      if (!userHasWriteAccess(ctx, aid, user.getUid)) {
+        throw new ForbiddenException(s"You do not have permission to modify asset $aid")
       }
-      val datasetUserAccessDao = new DatasetUserAccessDao(ctx.configuration())
+      val assetUserAccessDao = new AssetUserAccessDao(ctx.configuration())
       val userDao = new UserDao(ctx.configuration())
-      datasetUserAccessDao.merge(
-        new DatasetUserAccess(
-          did,
+      assetUserAccessDao.merge(
+        new AssetUserAccess(
+          aid,
           userDao.fetchOneByEmail(email).getUid,
           PrivilegeEnum.valueOf(privilege)
         )
@@ -193,32 +193,32 @@ class DatasetAccessResource {
   }
 
   /**
-    * This method revoke the user's access of the given dataset
+    * This method revoke the user's access of the given asset
     *
-    * @param did   the given dataset
+    * @param aid   the given asset
     * @param email the email of the use whose access is about to be removed
     * @return message indicating a success message
     */
   @DELETE
-  @Path("/revoke/{did}/{email}")
+  @Path("/revoke/{aid}/{email}")
   def revokeAccess(
-      @PathParam("did") did: Integer,
+      @PathParam("aid") aid: Integer,
       @PathParam("email") email: String,
       @Auth user: SessionUser
   ): Response = {
     withTransaction(context) { ctx =>
-      if (!userHasWriteAccess(ctx, did, user.getUid)) {
-        throw new ForbiddenException(s"You do not have permission to modify dataset $did")
+      if (!userHasWriteAccess(ctx, aid, user.getUid)) {
+        throw new ForbiddenException(s"You do not have permission to modify asset $aid")
       }
 
       val userDao = new UserDao(ctx.configuration())
 
       ctx
-        .delete(DATASET_USER_ACCESS)
+        .delete(ASSET_USER_ACCESS)
         .where(
-          DATASET_USER_ACCESS.UID
+          ASSET_USER_ACCESS.UID
             .eq(userDao.fetchOneByEmail(email).getUid)
-            .and(DATASET_USER_ACCESS.DID.eq(did))
+            .and(ASSET_USER_ACCESS.AID.eq(aid))
         )
         .execute()
 
