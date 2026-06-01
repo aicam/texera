@@ -8,9 +8,13 @@
 // dknet-ai.org) routes the request.
 //
 // Usage:
-//   yarn start --proxy-config=proxy-eks.config.js
-// or, for the bare ng serve without the y-websocket sidecar:
 //   yarn ng serve --proxy-config=proxy-eks.config.js
+// NOTE: pass --proxy-config to `ng serve` directly, NOT to `yarn start`.
+// `yarn start` wraps `ng serve` in `concurrently --kill-others ...`, so a
+// trailing --proxy-config is consumed by concurrently and `ng serve` silently
+// falls back to the default proxy.config.json (localhost targets). If you need
+// the y-websocket sidecar too, run it separately:
+//   npx y-websocket & yarn ng serve --proxy-config=proxy-eks.config.js
 // Use the HTTP listener (port 80) — the gateway routes by Host header,
 // not SNI. Going over HTTPS via IP fails TLS because Envoy selects the
 // cert by SNI and the IP doesn't match dknet-ai.org. HTTP avoids that
