@@ -19,14 +19,20 @@ spec:
           {{- if .Values.gatewayConfig.loadBalancer.subnetId }}
           service.beta.kubernetes.io/aws-load-balancer-subnets: {{ .Values.gatewayConfig.loadBalancer.subnetId }}
           {{- end }}
-      {{- if .Values.gatewayConfig.loadBalancer.availabilityZone }}
-      # Pin envoy-proxy pods to the NLB's AZ. NLBs only register targets that
-      # live in the AZs the LB is provisioned in; with a single EIP we have
-      # only one AZ enabled, so out-of-zone proxy pods become un-routable.
       envoyDeployment:
         pod:
+          # Keep the Envoy proxy pods (the public front door) off Karpenter's
+          # consolidation path — evicting them takes the whole site down during
+          # node churn. Set on the EnvoyProxy CR so the gateway controller owns
+          # it durably (a kubectl patch on the managed Deployment gets reverted).
+          annotations:
+            karpenter.sh/do-not-disrupt: "true"
+          {{- if .Values.gatewayConfig.loadBalancer.availabilityZone }}
+          # Pin envoy-proxy pods to the NLB's AZ. NLBs only register targets that
+          # live in the AZs the LB is provisioned in; with a single EIP we have
+          # only one AZ enabled, so out-of-zone proxy pods become un-routable.
           nodeSelector:
             topology.kubernetes.io/zone: {{ .Values.gatewayConfig.loadBalancer.availabilityZone | quote }}
-      {{- end }}
+          {{- end }}
 {{- end }}
 {{- end }}
