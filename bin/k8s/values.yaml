@@ -174,6 +174,15 @@ lakekeeperInit:
 texeraImages:
   pullPolicy: Always
 
+# Name of a pre-existing dockerconfigjson Secret used to pull the texera/* images
+# authenticated (the shared Docker Hub org hits the anonymous 429 rate limit when
+# many nodes pull at once, e.g. during Karpenter consolidation). Create it with:
+#   kubectl create secret generic dockerhub-pull \
+#     --from-file=.dockerconfigjson=$HOME/.docker/config.json \
+#     --type=kubernetes.io/dockerconfigjson -n <namespace>
+# and attach it to the relevant ServiceAccounts. Empty = unauthenticated pulls.
+imagePullSecretName: ""
+
 # Example data loader configuration
 exampleDataLoader:
   enabled: true
