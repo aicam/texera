@@ -94,6 +94,15 @@ FROM eclipse-temurin:17-jre-jammy AS runtime
 
 WORKDIR /texera/amber
 
+# Disable botocore's default flexible (CRC32 / aws-chunked) checksum on S3 uploads.
+# botocore >= 1.36 defaults request/response checksum to "when_supported", which the
+# Iceberg result-storage S3 endpoint rejects with "aws-chunked encoding is not
+# supported when x-amz-content-sha256 UNSIGNED-PAYLOAD is supplied", crashing the
+# Python port-storage writer so operator results never persist. "when_required"
+# restores pre-1.36 behavior. The botocore==1.40.53 pin came in via apache/texera#4272.
+ENV AWS_REQUEST_CHECKSUM_CALCULATION=when_required \
+    AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+
 COPY --from=build /texera/amber/requirements.txt /tmp/requirements.txt
 COPY --from=build /texera/amber/operator-requirements.txt /tmp/operator-requirements.txt
 
