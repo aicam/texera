@@ -94,6 +94,9 @@ postgresql:
       scriptsConfigMap: "postgresql-init-script"
 
 lakefs:
+  # Keep lakefs off Karpenter's consolidation path (front-line dataset access).
+  podAnnotations:
+    karpenter.sh/do-not-disrupt: "true"
   secrets:
     authEncryptSecretKey: random_string_for_lakefs
     databaseConnectionString: postgres://postgres:root_password@texera-postgresql:5432/texera_lakefs?sslmode=disable
@@ -138,6 +141,9 @@ lakekeeper:
     enabled: false
   internalOpenFGA: false
   catalog:
+    # Keep the Iceberg REST catalog off Karpenter's consolidation path.
+    podAnnotations:
+      karpenter.sh/do-not-disrupt: "true"
     replicas: 1
     image:
       repository: vakamo/lakekeeper
