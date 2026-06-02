@@ -50,6 +50,9 @@ hs_err_pid*
 
 # Ignoring Python related files
 venv/
+.venv/
+**/.venv/
+machine-manager/
 __pycache__/
 *.py[cod]
 *$py.class
