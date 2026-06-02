@@ -166,6 +166,7 @@ class TexeraWebApplication
     environment.jersey.register(classOf[AIAssistantResource])
     environment.jersey.register(classOf[ClusterResource])
     environment.jersey.register(classOf[ClusterCallbackResource])
+    environment.jersey.register(classOf[HuggingFaceModelResource])
 
     AuthResource.createAdminUser()
 

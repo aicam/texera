@@ -177,7 +177,7 @@ class WorkflowService(
   }
 
   private[this] def createWorkflowContext(): WorkflowContext = {
-    new WorkflowContext(workflowId)
+    new WorkflowContext(workflowId = workflowId, cuid = Some(computingUnitId))
   }
 
   def initExecutionService(
@@ -192,6 +192,13 @@ class WorkflowService(
 
     val (uidOpt, userEmailOpt) = userOpt.map(user => (user.getUid, user.getEmail)).unzip
 
+    // uid is NOT NULL in the DB; fail early here rather than letting the insert fail downstream.
+    val uid = uidOpt.getOrElse(
+      throw new IllegalArgumentException(
+        "Cannot start execution: a user id (uid) is required but none was provided."
+      )
+    )
+
     val workflowContext: WorkflowContext = createWorkflowContext()
     var controllerConf = ControllerConfig.default
 
@@ -204,7 +211,7 @@ class WorkflowService(
 
     workflowContext.executionId = ExecutionsMetadataPersistService.insertNewExecution(
       workflowContext.workflowId,
-      uidOpt,
+      uid,
       req.executionName,
       convertToJson(req.engineVersion),
       req.computingUnitId

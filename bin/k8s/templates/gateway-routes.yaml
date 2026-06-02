@@ -35,15 +35,6 @@ spec:
       backendRefs:
         - name: workflow-computing-unit-manager-svc
           port: 8888
-    {{- if .Values.agentService.enabled }}
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /api/agents
-      backendRefs:
-        - name: {{ .Release.Name }}-agent-service
-          port: 3001
-    {{- end }}
     {{- if .Values.litellm.enabled }}
     - matches:
         - path:
@@ -87,6 +78,16 @@ spec:
       backendRefs:
         - name: config-service-svc
           port: 9094
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/models
+        - path:
+            type: PathPrefix
+            value: /api/chat
+      backendRefs:
+        - name: access-control-service-svc
+          port: 9096
     - matches:
         - path:
             type: PathPrefix
@@ -139,3 +140,44 @@ spec:
         - group: gateway.envoyproxy.io
           kind: Backend
           name: texera-dynamic-backend
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /pve
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /api/pve
+      backendRefs:
+        - group: gateway.envoyproxy.io
+          kind: Backend
+          name: texera-dynamic-backend
+---
+# Agent Service Route (a separate HTTPRoute so the BackendTrafficPolicy can
+# target it for consistent-hash routing). Covers REST and the
+# /api/agents/:id/react WebSocket. Longest-prefix matching gives /api/agents
+# priority over the /api catch-all in the static routes above.
+{{- if .Values.agentService.enabled }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Release.Name }}-agent-service-route
+  namespace: {{ .Release.Namespace }}
+spec:
+  parentRefs:
+    - name: {{ .Release.Name }}-gateway
+  {{- if and .Values.gatewayConfig .Values.gatewayConfig.hostname }}
+  hostnames:
+    - {{ .Values.gatewayConfig.hostname }}
+  {{- end }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/agents
+      backendRefs:
+        - name: agent-service-svc
+          port: 3001
+{{- end }}

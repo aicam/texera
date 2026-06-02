@@ -4,12 +4,15 @@ dependencies:
   version: 16.5.6
 - name: lakefs
   repository: https://charts.lakefs.io
-  version: 1.4.5
+  version: 1.8.1
 - name: gateway-helm
   repository: oci://docker.io/envoyproxy
   version: 1.6.3
+- name: lakekeeper
+  repository: https://lakekeeper.github.io/lakekeeper-charts/
+  version: 0.9.0
 - name: metrics-server
   repository: https://kubernetes-sigs.github.io/metrics-server/
   version: 3.12.2
-digest: sha256:12934e0e3056b39a2fd309e8cc88c8c79a6039dc573c2641a2463f0783d7a6b5
-generated: "2026-04-24T15:41:00.319094978-07:00"
+digest: sha256:ac4da080131199b48c354ffdad6d0532b443534b01b779bdffef8fceddf2763e
+generated: "2026-06-01T18:21:34.655511945-07:00"
