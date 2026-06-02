@@ -24,7 +24,7 @@
 # completeness or stability of the code, it does indicate that the project
 # has yet to be fully endorsed by the ASF.
 
-FROM sbtscala/scala-sbt:eclipse-temurin-jammy-11.0.17_8_1.9.3_2.13.11 AS build
+FROM sbtscala/scala-sbt:eclipse-temurin-jammy-17.0.5_8_1.9.3_2.13.11 AS build
 
 # Set working directory
 WORKDIR /texera
@@ -34,15 +34,33 @@ COPY common/ common/
 COPY amber/ amber/
 COPY project/ project/
 COPY build.sbt build.sbt
+COPY .jvmopts .jvmopts
 
-# Update system and install dependencies. python3-minimal is needed by
-# bin/licensing/concat_license_binary.py below.
+# python3-minimal is needed by bin/licensing/concat_license_binary.py;
+# python3-pip installs the betterproto plugin; unzip + curl fetch protoc.
 RUN apt-get update && apt-get install -y \
     netcat \
     unzip \
+    curl \
     libpq-dev \
     python3-minimal \
+    python3-pip \
     && apt-get clean
+
+# Install protoc (version pinned in bin/protoc-version.txt) and the
+# betterproto plugin (version pinned via amber/requirements.txt as a
+# pip constraint, so the runtime base `betterproto` and the build-time
+# `betterproto[compiler]` stay in lockstep), then regenerate
+# amber/src/main/python/proto/ before `sbt dist`.
+COPY bin/protoc-version.txt bin/protoc-version.txt
+COPY bin/python-proto-gen.sh bin/python-proto-gen.sh
+RUN PROTOC_VERSION=$(cat bin/protoc-version.txt) \
+    && curl -fsSL -o /tmp/protoc.zip "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip" \
+    && unzip -o /tmp/protoc.zip -d /usr/local \
+    && chmod +x /usr/local/bin/protoc \
+    && rm /tmp/protoc.zip \
+    && pip3 install --no-cache-dir -c amber/requirements.txt 'betterproto[compiler]' \
+    && bash bin/python-proto-gen.sh
 
 # Add .git for runtime calls to jgit from OPversion
 COPY .git .git
@@ -72,17 +90,19 @@ RUN python3 bin/licensing/concat_license_binary.py amber/LICENSE-binary-combined
         amber/LICENSE-binary-java \
         amber/LICENSE-binary-python
 
-FROM eclipse-temurin:11-jdk-jammy AS runtime
+FROM eclipse-temurin:17-jdk-jammy AS runtime
 
 WORKDIR /texera/amber
 
 COPY --from=build /texera/amber/requirements.txt /tmp/requirements.txt
 COPY --from=build /texera/amber/operator-requirements.txt /tmp/operator-requirements.txt
+COPY --from=build /texera/amber/system-requirements-lock.txt /tmp/system-requirements-lock.txt
 
 # Install Python runtime dependencies
 RUN apt-get update && apt-get install -y \
     python3-pip \
     python3-dev \
+    python3-venv \
     libpq-dev \
     && apt-get clean
 

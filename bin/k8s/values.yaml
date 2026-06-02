@@ -18,8 +18,8 @@
 texera:
   # Container image registry and tag for all Texera services
   # Override these to use a different registry or version
-  imageRegistry: ghcr.io/apache
-  imageTag: latest
+  imageRegistry: docker.io/apache
+  imageTag: 1.1.0-incubating
 
 global:
   # Required by Bitnami sub-charts (postgresql) to allow custom images
@@ -128,6 +128,38 @@ lakefs:
           name: texera-s3-credentials
           key: secret-access-key
 
+lakekeeper:
+  enabled: true
+  postgresql:
+    enabled: false
+  internalOpenFGA: false
+  catalog:
+    replicas: 1
+    image:
+      repository: vakamo/lakekeeper
+      tag: v0.11.0
+      pullPolicy: IfNotPresent
+    service:
+      externalPort: 8181
+  externalDatabase:
+    type: postgres
+    host_read: texera-postgresql
+    host_write: texera-postgresql
+    port: 5432
+    database: texera_lakekeeper
+    user: postgres
+    password: root_password
+
+lakekeeperInit:
+  enabled: true
+  defaultProject:
+    id: "00000000-0000-0000-0000-000000000000"
+    name: default
+  warehouse:
+    name: texera
+    region: us-west-2
+    s3Bucket: texera-iceberg
+
 # Part2: configurations of Texera-related micro services
 texeraImages:
   pullPolicy: Always
@@ -190,6 +222,55 @@ accessControlService:
     type: ClusterIP
     port: 9096
 
+agentService:
+  enabled: true
+  name: agent-service
+  numOfPods: 1
+  imageName: texera-agent-service
+  service:
+    type: ClusterIP
+    port: 3001
+  env:
+    # Authenticates the agent service to the in-cluster LLM gateway
+    # (access-control-service / LiteLLM), not to the upstream provider.
+    llmApiKey: "dummy"
+
+litellm:
+  enabled: true
+  name: litellm
+  image: litellm/litellm:main-stable
+  numOfPods: 1
+  service:
+    type: ClusterIP
+    port: 4000
+  masterKey: "sk-texera-litellm-key"
+  # Postgres persistence: the database is created by the postgres init script and
+  # LiteLLM stores keys/spend (and model config when storeModelInDb is true) there.
+  databaseName: texera_litellm
+  # Full Postgres connection string for LiteLLM. Leave empty to use the in-cluster
+  # Postgres (composed from postgresql.auth + databaseName); set it to point at an
+  # external database, e.g. postgresql://user:pass@host:5432/dbname.
+  databaseUrl: ""
+  storeModelInDb: true
+  # Provider API keys - injected as env vars into the LiteLLM pod and stored in a
+  # Secret. Set these via --set or a values override file (do NOT commit real keys).
+  # The config below references them via "os.environ/KEY_NAME".
+  providerApiKeys:
+    OPENAI_API_KEY: ""
+    ANTHROPIC_API_KEY: ""
+  config: |
+    litellm_settings:
+      drop_params: true
+    model_list:
+      - model_name: claude-haiku-4.5
+        litellm_params:
+          model: claude-haiku-4-5-20251001
+          api_key: "os.environ/ANTHROPIC_API_KEY"
+      - model_name: gpt-5-mini
+        litellm_params:
+          model: gpt-5-mini
+          api_key: "os.environ/OPENAI_API_KEY"
+
 # headless service for the access of computing units
 workflowComputingUnitPool:
   createNamespaces: true
@@ -250,6 +331,8 @@ texeraEnvVars:
     value: "true"
   - name: GUI_WORKFLOW_WORKSPACE_ASYNC_RENDERING_ENABLED
     value: "true"
+  - name: GUI_WORKFLOW_WORKSPACE_COPILOT_ENABLED
+    value: "true"
   - name: COMPUTING_UNIT_SHARING_ENABLED
     value: "true"
   - name: USER_SYS_INVITE_ONLY
@@ -276,6 +359,7 @@ pythonLanguageServer:
   name: python-language-server
   replicaCount: 1
   image: texera/pylsp:latest
+  imagePullPolicy: IfNotPresent
   imagePullSecret: regcred
   resources:
     limits:
@@ -339,41 +423,6 @@ cloudmapper:
     requests:
       cpu: 100m
       memory: 256Mi
-
-# LiteLLM proxy. When enabled, deploys a litellm container that fronts
-# upstream LLM providers (Anthropic, OpenAI, ...) and exposes an OpenAI-
-# compatible API for the agent service. Disabled by default.
-litellm:
-  enabled: false
-  image: ghcr.io/berriai/litellm:main-stable
-  numOfPods: 1
-  masterKey: "sk-litellm-master-key"
-  providerApiKeys: {}
-  config: |
-    litellm_settings:
-      drop_params: true
-    model_list: []
-  # Observed idle: ~860 MiB RSS (litellm preloads its model list + tokenizer
-  # data). 1Gi request gives ~15% headroom; no limit so it can grow under load.
-  resources:
-    requests:
-      cpu: 100m
-      memory: 1Gi
-
-# Agent service (chatbot/copilot). When enabled, deploys the bun-based
-# agent-service that orchestrates LLM calls via LiteLLM. Disabled by default.
-agentService:
-  enabled: false
-  numOfPods: 1
-  imageName: agent-service
-  env:
-    llmApiKey: "sk-litellm-master-key"
-  # Observed idle: ~60 MiB RSS. 128 MiB request leaves enough headroom for
-  # request-handling bursts; no limit so it can grow if needed.
-  resources:
-    requests:
-      cpu: 50m
-      memory: 128Mi
 
 gatewayConfig:
   # Routes are available at bin/k8s/templates/gateway-routes.yaml
