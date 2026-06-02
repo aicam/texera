@@ -35,18 +35,6 @@ spec:
       backendRefs:
         - name: workflow-computing-unit-manager-svc
           port: 8888
-    {{- if .Values.litellm.enabled }}
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /api/models
-        - path:
-            type: PathPrefix
-            value: /api/chat
-      backendRefs:
-        - name: texera-{{ .Values.accessControlService.name }}-svc
-          port: {{ .Values.accessControlService.service.port }}
-    {{- end }}
     - matches:
         - path:
             type: PathPrefix

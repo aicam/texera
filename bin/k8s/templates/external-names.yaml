@@ -72,3 +72,15 @@ to access services in the main namespace using the same service names.
   "namespace" $workflowComputingUnitPoolNamespace
   "externalName" (printf "%s-svc.%s.svc.cluster.local" .Values.webserver.name $namespace)
 ) | nindent 0 }}
+
+{{- if .Values.lakekeeper.enabled }}
+---
+{{/* Lakekeeper ExternalName — CU pods (in the pool namespace) reach the Iceberg
+     REST catalog (in the release namespace) via STORAGE_ICEBERG_CATALOG_REST_URI,
+     which uses the bare `{{ .Release.Name }}-lakekeeper` host. */}}
+{{- include "external-name-service" (dict
+    "name" (printf "%s-lakekeeper" .Release.Name)
+    "namespace" $workflowComputingUnitPoolNamespace
+    "externalName" (printf "%s-lakekeeper.%s.svc.cluster.local" .Release.Name $namespace)
+) | nindent 0 }}
+{{- end }}
