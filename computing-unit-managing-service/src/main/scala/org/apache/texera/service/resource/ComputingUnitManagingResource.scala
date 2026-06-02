@@ -61,6 +61,20 @@ import scala.annotation.unused
 import scala.jdk.CollectionConverters.CollectionHasAsScala
 
 object ComputingUnitManagingResource {
+  // JDK 17 module-access flags required by the CU JVM at runtime: Apache Arrow
+  // (ArrowSource and friends) needs java.base/java.nio opened or MemoryUtil fails
+  // to initialize; Pekko/Kryo need the others. Mirrors the repo .jvmopts. Without
+  // these the CU JVM crashes on the first Arrow operator (works on JDK 11, not 17).
+  private val jvmAddOpens: String = Seq(
+    "java.base/java.lang",
+    "java.base/java.lang.invoke",
+    "java.base/java.util",
+    "java.base/java.util.concurrent.atomic",
+    "java.base/sun.nio.ch",
+    "java.base/java.nio",
+    "java.base/jdk.internal.misc"
+  ).map(m => s"--add-opens=$m=ALL-UNNAMED").mkString(" ")
+
   private def context: DSLContext =
     SqlServer
       .getInstance()
@@ -602,7 +616,7 @@ class ComputingUnitManagingResource {
             param.gpuLimit,
             computingUnitEnvironmentVariables ++ Map(
               EnvironmentalVariable.ENV_USER_JWT_TOKEN -> userToken,
-              EnvironmentalVariable.ENV_JAVA_OPTS -> s"-Xmx${param.jvmMemorySize}"
+              EnvironmentalVariable.ENV_JAVA_OPTS -> s"$jvmAddOpens -Xmx${param.jvmMemorySize}"
             ),
             Some(param.shmSize)
           )
@@ -622,7 +636,7 @@ class ComputingUnitManagingResource {
         try {
           val cuEnv = computingUnitEnvironmentVariables ++ Map(
             EnvironmentalVariable.ENV_USER_JWT_TOKEN -> userToken,
-            EnvironmentalVariable.ENV_JAVA_OPTS -> "-Xmx2g"
+            EnvironmentalVariable.ENV_JAVA_OPTS -> s"$jvmAddOpens -Xmx2g"
           )
 
           // The k8s-internal DNS names in cuEnv aren't reachable from a remote
