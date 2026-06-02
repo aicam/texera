@@ -53,7 +53,9 @@ import org.apache.texera.service.util.{
   InsufficientComputingUnitQuota,
   KubernetesClient
 }
+import org.apache.texera.dao.jooq.generated.Tables.{OPERATOR_PORT_CACHE, OPERATOR_PORT_EXECUTIONS, WORKFLOW_EXECUTIONS}
 import org.jooq.{DSLContext, EnumType}
+import org.jooq.impl.SQLDataType
 import play.api.libs.json._
 
 import java.sql.Timestamp
@@ -282,6 +284,37 @@ object ComputingUnitManagingResource {
 @Produces(Array(MediaType.APPLICATION_JSON))
 @Path("/computing-unit")
 class ComputingUnitManagingResource {
+
+  /**
+    * Delete global metadata rows for executions that ran on the given computing unit.
+    * Cleans up operator_port_cache and operator_port_executions rows.
+    * Iceberg result documents are CU-local and already destroyed with the pod.
+    */
+  private def deleteCacheMetadataForComputingUnit(ctx: DSLContext, cuid: Int): Unit = {
+    ctx
+      .deleteFrom(OPERATOR_PORT_CACHE)
+      .where(
+        OPERATOR_PORT_CACHE.SOURCE_EXECUTION_ID.in(
+          ctx
+            .select(WORKFLOW_EXECUTIONS.EID.cast(SQLDataType.BIGINT))
+            .from(WORKFLOW_EXECUTIONS)
+            .where(WORKFLOW_EXECUTIONS.CUID.eq(cuid))
+        )
+      )
+      .execute()
+
+    ctx
+      .deleteFrom(OPERATOR_PORT_EXECUTIONS)
+      .where(
+        OPERATOR_PORT_EXECUTIONS.WORKFLOW_EXECUTION_ID.in(
+          ctx
+            .select(WORKFLOW_EXECUTIONS.EID)
+            .from(WORKFLOW_EXECUTIONS)
+            .where(WORKFLOW_EXECUTIONS.CUID.eq(cuid))
+        )
+      )
+      .execute()
+  }
 
   private def getComputingUnitByCuid(ctx: DSLContext, cuid: Int): WorkflowComputingUnit = {
     val wcDao = new WorkflowComputingUnitDao(ctx.configuration())
@@ -800,8 +833,10 @@ class ComputingUnitManagingResource {
         // checked without credentials, local units don't have pods)
         if (
           unit.getType == WorkflowComputingUnitTypeEnum.kubernetes &&
+          unit.getTerminateTime == null &&
           !KubernetesClient.podExists(unit.getCuid)
         ) {
+          deleteCacheMetadataForComputingUnit(ctx, unit.getCuid)
           unit.setTerminateTime(new Timestamp(System.currentTimeMillis()))
           computingUnitDao.update(unit)
         }
@@ -913,6 +948,9 @@ class ComputingUnitManagingResource {
     withTransaction(context) { ctx =>
       val cuDao = new WorkflowComputingUnitDao(ctx.configuration())
       val unit = getComputingUnitByCuid(ctx, cuid)
+
+      // Clean up cache metadata for executions that ran on this CU
+      deleteCacheMetadataForComputingUnit(ctx, cuid)
 
       unit.getType match {
         case WorkflowComputingUnitTypeEnum.kubernetes =>

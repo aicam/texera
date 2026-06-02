@@ -97,6 +97,7 @@ export class WorkflowActionService {
 
   private workflowSettings: WorkflowSettings;
   private workflowResetSubject = new Subject<void>();
+  private _showRegion: boolean = false;
 
   constructor(
     private operatorMetadataService: OperatorMetadataService,
@@ -926,5 +927,13 @@ export class WorkflowActionService {
 
   public getHighlightingEnabled() {
     return this.highlightingEnabled;
+  }
+
+  public setShowRegion(show: boolean): void {
+    this._showRegion = show;
+  }
+
+  public getShowRegion(): boolean {
+    return this._showRegion;
   }
 }

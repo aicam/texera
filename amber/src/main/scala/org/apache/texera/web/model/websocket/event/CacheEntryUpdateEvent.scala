@@ -17,26 +17,19 @@
  * under the License.
  */
 
-package org.apache.texera.amber.core.workflow
+package org.apache.texera.web.model.websocket.event
 
-import org.apache.texera.config.GuiConfig
-
-import org.apache.texera.amber.core.virtualidentity.ExecutionIdentity
-
-import java.net.URI
-
-case class CachedOutput(
-    resultUri: URI,
-    fingerprintJson: String,
+/**
+  * Websocket event emitted when a cached output entry is upserted.
+  *
+  * @param globalPortId Serialized GlobalPortIdentity string
+  * @param subdagHash SHA-256 hash of the upstream subDAG fingerprint
+  * @param tupleCount Cached tuple count (optional)
+  * @param sourceExecutionId Execution id that produced the cached output
+  */
+case class CacheEntryUpdateEvent(
+    globalPortId: String,
+    subdagHash: String,
     tupleCount: Option[Long],
-    sourceExecutionId: Option[ExecutionIdentity]
-)
-
-case class WorkflowSettings(
-    dataTransferBatchSize: Int = 400,
-    executionMode: ExecutionMode =
-      ExecutionMode.valueOf(GuiConfig.guiWorkflowWorkspaceDefaultExecutionMode),
-    outputPortsNeedingStorage: Set[GlobalPortIdentity] = Set.empty,
-    // serialized GlobalPortIdentity -> cached output
-    cachedOutputs: Map[String, CachedOutput] = Map.empty
-)
+    sourceExecutionId: Long
+) extends TexeraWebSocketEvent

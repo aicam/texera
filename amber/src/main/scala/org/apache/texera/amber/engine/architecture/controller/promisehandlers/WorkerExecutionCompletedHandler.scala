@@ -20,10 +20,7 @@
 package org.apache.texera.amber.engine.architecture.controller.promisehandlers
 
 import com.twitter.util.Future
-import org.apache.texera.amber.engine.architecture.controller.{
-  ControllerAsyncRPCHandlerInitializer,
-  ExecutionStateUpdate
-}
+import org.apache.texera.amber.engine.architecture.controller.ControllerAsyncRPCHandlerInitializer
 import org.apache.texera.amber.engine.architecture.rpc.controlcommands.{
   AsyncRPCContext,
   EmptyRequest,
@@ -60,17 +57,8 @@ trait WorkerExecutionCompletedHandler {
     Future
       .collect(Seq(statsRequest))
       .flatMap(_ => {
-        // if entire workflow is completed, clean up
-        val isWorkflowTerminal =
-          cp.workflowExecution.isCompleted &&
-            !cp.workflowScheduler.hasPendingRegions &&
-            !cp.workflowExecutionCoordinator.hasUnfinishedRegionCoordinators
-        if (isWorkflowTerminal) {
-          // after query result come back: send completed event, cleanup ,and kill workflow
-          sendToClient(ExecutionStateUpdate(cp.workflowExecution.getState))
-          cp.controllerTimerService.disableStatusUpdate()
-          cp.controllerTimerService.disableRuntimeStatisticsCollection()
-        }
+        // completion notification is handled by the scheduler when all regions finish
+        ()
       })
     EmptyReturn()
   }

@@ -1,4 +1,4 @@
-/*
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -17,26 +17,17 @@
  * under the License.
  */
 
-package org.apache.texera.amber.core.workflow
-
-import org.apache.texera.config.GuiConfig
-
-import org.apache.texera.amber.core.virtualidentity.ExecutionIdentity
-
-import java.net.URI
-
-case class CachedOutput(
-    resultUri: URI,
-    fingerprintJson: String,
-    tupleCount: Option[Long],
-    sourceExecutionId: Option[ExecutionIdentity]
-)
-
-case class WorkflowSettings(
-    dataTransferBatchSize: Int = 400,
-    executionMode: ExecutionMode =
-      ExecutionMode.valueOf(GuiConfig.guiWorkflowWorkspaceDefaultExecutionMode),
-    outputPortsNeedingStorage: Set[GlobalPortIdentity] = Set.empty,
-    // serialized GlobalPortIdentity -> cached output
-    cachedOutputs: Map[String, CachedOutput] = Map.empty
-)
+/**
+ * Cache entry metadata returned for a workflow.
+ */
+export interface WorkflowCacheEntry {
+  globalPortId: string;
+  logicalOpId: string;
+  layerName: string;
+  portId: number;
+  internal: boolean;
+  subdagHash: string;
+  tupleCount?: number;
+  sourceExecutionId?: number;
+  updatedAt: number;
+}

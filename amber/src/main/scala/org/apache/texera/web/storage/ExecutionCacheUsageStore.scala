@@ -17,26 +17,18 @@
  * under the License.
  */
 
-package org.apache.texera.amber.core.workflow
+package org.apache.texera.web.storage
 
-import org.apache.texera.config.GuiConfig
+import org.apache.texera.web.model.websocket.event.CachedPortUsage
 
-import org.apache.texera.amber.core.virtualidentity.ExecutionIdentity
-
-import java.net.URI
-
-case class CachedOutput(
-    resultUri: URI,
-    fingerprintJson: String,
-    tupleCount: Option[Long],
-    sourceExecutionId: Option[ExecutionIdentity]
-)
-
-case class WorkflowSettings(
-    dataTransferBatchSize: Int = 400,
-    executionMode: ExecutionMode =
-      ExecutionMode.valueOf(GuiConfig.guiWorkflowWorkspaceDefaultExecutionMode),
-    outputPortsNeedingStorage: Set[GlobalPortIdentity] = Set.empty,
-    // serialized GlobalPortIdentity -> cached output
-    cachedOutputs: Map[String, CachedOutput] = Map.empty
+/**
+  * Holds cached output entries that matched the current execution's workflow fingerprint.
+  *
+  * The store is used to emit websocket updates so the frontend can render cache metadata
+  * (e.g., source execution IDs) without leaking result URIs.
+  * The updatedAt field forces a state change even when the cache list is empty.
+  */
+case class ExecutionCacheUsageStore(
+    cachedOutputs: List[CachedPortUsage] = List.empty,
+    updatedAt: Long = System.currentTimeMillis()
 )

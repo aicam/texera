@@ -17,26 +17,14 @@
  * under the License.
  */
 
-package org.apache.texera.amber.core.workflow
+package org.apache.texera.web.storage
 
-import org.apache.texera.config.GuiConfig
+import org.apache.texera.web.model.websocket.event.CacheEntryUpdateEvent
 
-import org.apache.texera.amber.core.virtualidentity.ExecutionIdentity
-
-import java.net.URI
-
-case class CachedOutput(
-    resultUri: URI,
-    fingerprintJson: String,
-    tupleCount: Option[Long],
-    sourceExecutionId: Option[ExecutionIdentity]
-)
-
-case class WorkflowSettings(
-    dataTransferBatchSize: Int = 400,
-    executionMode: ExecutionMode =
-      ExecutionMode.valueOf(GuiConfig.guiWorkflowWorkspaceDefaultExecutionMode),
-    outputPortsNeedingStorage: Set[GlobalPortIdentity] = Set.empty,
-    // serialized GlobalPortIdentity -> cached output
-    cachedOutputs: Map[String, CachedOutput] = Map.empty
+/**
+  * Tracks the latest cache upsert so websocket clients can refresh cache metadata.
+  */
+case class ExecutionCacheEntryUpdateStore(
+    lastUpdate: Option[CacheEntryUpdateEvent] = None,
+    updatedAt: Long = System.currentTimeMillis()
 )

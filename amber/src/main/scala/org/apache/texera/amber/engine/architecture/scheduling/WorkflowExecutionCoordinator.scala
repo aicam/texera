@@ -26,8 +26,10 @@ import org.apache.texera.amber.engine.architecture.common.{
   PekkoActorRefMappingService,
   PekkoActorService
 }
-import org.apache.texera.amber.engine.architecture.controller.ControllerConfig
-import org.apache.texera.amber.engine.architecture.controller.ExecutionStateUpdate
+import org.apache.texera.amber.engine.architecture.controller.{
+  ControllerConfig,
+  ExecutionStateUpdate
+}
 import org.apache.texera.amber.engine.architecture.controller.execution.WorkflowExecution
 import org.apache.texera.amber.engine.common.rpc.AsyncRPCClient
 
@@ -37,7 +39,8 @@ import scala.collection.mutable
 class WorkflowExecutionCoordinator(
     workflowExecution: WorkflowExecution,
     controllerConfig: ControllerConfig,
-    asyncRPCClient: AsyncRPCClient
+    asyncRPCClient: AsyncRPCClient,
+    executionId: org.apache.texera.amber.core.virtualidentity.ExecutionIdentity
 ) extends LazyLogging {
 
   var schedule: Schedule = Schedule(Map.empty)
@@ -107,6 +110,7 @@ class WorkflowExecutionCoordinator(
               region,
               isRestart,
               workflowExecution,
+              executionId,
               asyncRPCClient,
               controllerConfig,
               actorService,
@@ -118,6 +122,16 @@ class WorkflowExecutionCoordinator(
           .toSeq
       )
       .unit
+      .flatMap { _ =>
+        if (regionExecutionCoordinators.values.exists(!_.isCompleted)) {
+          Future.Unit
+        } else {
+          // All launched regions finished immediately (e.g., cached); proceed to the next batch.
+          // Cached regions have no workers, so no port-completion event would otherwise re-trigger
+          // coordination, and completion is emitted once via the guard above when the schedule drains.
+          coordinateRegionExecutors(actorService)
+        }
+      }
   }
 
   def getRegionOfLink(link: PhysicalLink): Region = {

@@ -301,6 +301,7 @@ export class JointUIService {
         width: JointUIService.DEFAULT_OPERATOR_WIDTH,
         height: JointUIService.DEFAULT_OPERATOR_HEIGHT,
       },
+      portLabelMarkup: JointUIService.getCustomPortLabelMarkup(),
       attrs: JointUIService.getCustomOperatorStyleAttrs(
         operator,
         JointUIService.truncateOperatorDisplayName(
@@ -311,8 +312,26 @@ export class JointUIService {
       ),
       ports: {
         groups: {
-          in: { attrs: JointUIService.getCustomPortStyleAttrs() },
-          out: { attrs: JointUIService.getCustomPortStyleAttrs() },
+          in: {
+            attrs: JointUIService.getCustomPortStyleAttrs(),
+            markup: JointUIService.getCustomPortMarkup(),
+            label: {
+              position: {
+                name: "left",
+                args: { x: -5, y: 10 },
+              },
+            },
+          },
+          out: {
+            attrs: JointUIService.getCustomPortStyleAttrs(),
+            markup: JointUIService.getCustomPortMarkup(),
+            label: {
+              position: {
+                name: "right",
+                args: { x: 5, y: -10 },
+              },
+            },
+          },
         },
       },
       markup: TexeraCustomJointElement.getMarkup(
@@ -366,12 +385,17 @@ export class JointUIService {
     return operatorElement;
   }
 
+  /**
+   * Updates operator state, worker labels, and per-port counts using latest statistics.
+   * Cache labels are applied for cached outputs and positioned to avoid overlapping the outgoing edge.
+   */
   public changeOperatorStatistics(
     jointPaper: joint.dia.Paper,
     operatorID: string,
     statistics: OperatorStatistics | undefined,
     isSource: boolean,
-    isSink: boolean
+    isSink: boolean,
+    cachePortLabels?: Record<string, string>
   ): void {
     if (!statistics) {
       this.changeOperatorState(jointPaper, operatorID, OperatorState.Uninitialized);
@@ -387,17 +411,31 @@ export class JointUIService {
 
     const inputMetrics = statistics.inputPortMetrics;
     const outputMetrics = statistics.outputPortMetrics;
+    // Cached operators show "-" for inputs and non-materialized outputs, and label workers as "from cache".
+    const isSkippedFromCache = statistics.operatorState === OperatorState.CompletedFromCache;
 
     const workerCount = statistics.numWorkers ?? 1;
-    element.attr(`.${operatorWorkerCountClass}/text`, "#workers: " + String(workerCount));
+    const workerCountLabel = isSkippedFromCache ? "from cache" : "#workers: " + String(workerCount);
+    element.attr(`.${operatorWorkerCountClass}/text`, workerCountLabel);
 
     inPorts.forEach(portDef => {
       const portId = portDef.id;
       if (portId != null) {
         const parts = portId.split("-");
         const numericSuffix = parts.length > 1 ? parts[1] : portId;
-        const count: number = inputMetrics[numericSuffix] ?? 0;
-        element.portProp(portId, "attrs/.port-label/text", count.toLocaleString());
+        const count = inputMetrics[numericSuffix];
+        const rawAttrs = (portDef.attrs as any) || {};
+        const oldText: string = (rawAttrs[".port-label"] && rawAttrs[".port-label"].text) || "";
+        let originalName = oldText.includes(":") ? oldText.split(":", 1)[0].trim() : oldText;
+
+        if (!originalName) {
+          originalName = portId;
+        }
+
+        // Negative counts mark skipped/unknown inputs from cached sub-operators.
+        const isUnknownCount = count !== undefined && count < 0;
+        const labelText = isSkippedFromCache || isUnknownCount ? "-" : (count ?? 0).toLocaleString();
+        element.portProp(portId, "attrs/.port-label/text", labelText);
       }
     });
 
@@ -407,10 +445,74 @@ export class JointUIService {
         const parts = portId.split("-");
         const numericSuffix = parts.length > 1 ? parts[1] : portId;
         const count: number = outputMetrics[numericSuffix] ?? 0;
-        element.portProp(portId, "attrs/.port-label/text", count.toLocaleString());
+        const rawAttrs = (portDef.attrs as any) || {};
+        const oldText: string = (rawAttrs[".port-label"] && rawAttrs[".port-label"].text) || "";
+        let originalName = oldText.includes(":") ? oldText.split(":", 1)[0].trim() : oldText;
+
+        if (!originalName) {
+          originalName = portId;
+        }
+
+        const baseLabel = isSkippedFromCache && count === undefined ? "-" : (count ?? 0).toLocaleString();
+        element.portProp(portId, "attrs/.port-label/text", baseLabel);
       }
     });
+    const effectiveCacheLabels = isSkippedFromCache ? cachePortLabels : undefined;
+    this.changeOperatorCacheLabels(jointPaper, operatorID, effectiveCacheLabels);
     this.changeOperatorState(jointPaper, operatorID, statistics.operatorState);
+  }
+
+  /**
+   * Updates cache usage labels for output ports without changing counts or operator state.
+   */
+  public changeOperatorCacheLabels(
+    jointPaper: joint.dia.Paper,
+    operatorID: string,
+    cachePortLabels?: Record<string, string>
+  ): void {
+    const element = jointPaper.getModelById(operatorID) as joint.shapes.devs.Model;
+    if (!element) {
+      return;
+    }
+    const outPorts = element.getPorts().filter(p => p.group === "out");
+    outPorts.forEach(portDef => {
+      const portId = portDef.id;
+      if (portId != null) {
+        const parts = portId.split("-");
+        const numericSuffix = parts.length > 1 ? parts[1] : portId;
+        const cacheLabel = cachePortLabels?.[numericSuffix] ?? "";
+        element.portProp(portId, "attrs/.port-cache-label/text", cacheLabel);
+        element.portProp(
+          portId,
+          "attrs/.port-cache-label/transform",
+          cacheLabel ? "translate(0, 12)" : ""
+        );
+      }
+    });
+  }
+
+  /**
+   * Updates cached output port indicator badges without changing counts or labels.
+   */
+  public changeOperatorCachedPorts(
+    jointPaper: joint.dia.Paper,
+    operatorID: string,
+    cachedPortIds?: Set<string>
+  ): void {
+    const element = jointPaper.getModelById(operatorID) as joint.shapes.devs.Model;
+    if (!element) {
+      return;
+    }
+    const outPorts = element.getPorts().filter(p => p.group === "out");
+    outPorts.forEach(portDef => {
+      const portId = portDef.id;
+      if (portId != null) {
+        const parts = portId.split("-");
+        const numericSuffix = parts.length > 1 ? parts[1] : portId;
+        const isCached = cachedPortIds?.has(numericSuffix) ?? false;
+        element.portProp(portId, "attrs/.port-cache-indicator/display", isCached ? "block" : "none");
+      }
+    });
   }
   public foldOperatorDetails(jointPaper: joint.dia.Paper, operatorID: string): void {
     jointPaper.getModelById(operatorID).attr({
@@ -447,6 +549,9 @@ export class JointUIService {
       case OperatorState.Completed:
         fillColor = "green";
         break;
+      case OperatorState.CompletedFromCache:
+        fillColor = "#1890ff";
+        break;
       case OperatorState.Pausing:
       case OperatorState.Paused:
         fillColor = "magenta";
@@ -470,6 +575,7 @@ export class JointUIService {
     inPorts.forEach(p => {
       if (p.id != null) {
         element.portProp(p.id, "attrs/.port-label/fill", fillColor);
+        element.portProp(p.id, "attrs/.port-cache-label/fill", fillColor);
       }
     });
 
@@ -477,6 +583,7 @@ export class JointUIService {
     outPorts.forEach(p => {
       if (p.id != null) {
         element.portProp(p.id, "attrs/.port-label/fill", fillColor);
+        element.portProp(p.id, "attrs/.port-cache-label/fill", fillColor);
       }
     });
   }
@@ -648,6 +755,8 @@ export class JointUIService {
   /**
    * This function changes the default svg of the operator ports.
    * It hides the port label that will display 'out/in' beside the operators.
+   * Port labels remain visible for per-port metrics and cache metadata, and cached
+   * output ports show a small badge that never captures pointer events so ports stay interactive.
    *
    * @returns the custom attributes of the ports
    */
@@ -657,6 +766,15 @@ export class JointUIService {
         fill: "#A0A0A0",
         r: 5,
         stroke: "none",
+        "pointer-events": "all",
+      },
+      ".port-cache-indicator": {
+        fill: "#fadb14",
+        points: "0,-12 4,-9 0,-6 -4,-9",
+        stroke: "#ad8b00",
+        "stroke-width": 1,
+        display: "none",
+        "pointer-events": "none",
       },
       ".port-label": {
         visibility: "visible",
@@ -666,8 +784,58 @@ export class JointUIService {
         ref: ".port-body",
         "ref-y": 0.5,
         "y-alignment": "middle",
+        "pointer-events": "none",
       },
     };
+  }
+
+  /**
+   * Defines the default markup for ports, including the cache badge and port body.
+   */
+  public static getCustomPortMarkup(): any[] {
+    return [
+      {
+        tagName: "circle",
+        selector: ".port-body",
+        attributes: {
+          class: "port-body",
+          magnet: true,
+        },
+      },
+      {
+        tagName: "polygon",
+        selector: ".port-cache-indicator",
+        attributes: {
+          class: "port-cache-indicator",
+          magnet: false,
+          "pointer-events": "none",
+        },
+      },
+    ];
+  }
+
+  /**
+   * Defines the default port label markup for counts and cache metadata.
+   */
+  public static getCustomPortLabelMarkup(): any[] {
+    return [
+      {
+        tagName: "text",
+        selector: ".port-label",
+        attributes: {
+          class: "port-label",
+          "pointer-events": "none",
+        },
+      },
+      {
+        tagName: "text",
+        selector: ".port-cache-label",
+        attributes: {
+          class: "port-cache-label",
+          "pointer-events": "none",
+        },
+      },
+    ];
   }
 
   /**
