@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-FROM sbtscala/scala-sbt:eclipse-temurin-jammy-11.0.17_8_1.9.3_2.13.11 AS build
+FROM sbtscala/scala-sbt:eclipse-temurin-jammy-17.0.5_8_1.9.3_2.13.11 AS build
 
 # Set working directory
 WORKDIR /texera
@@ -25,11 +25,18 @@ COPY common/ common/
 COPY amber/ amber/
 COPY project/ project/
 COPY build.sbt build.sbt
+# JDK 17+ JVM flags consumed by build.sbt via JdkOptions (kept in lockstep with
+# the other service images after the Java 17 LTS bump, #4938).
+COPY .jvmopts .jvmopts
 
-# Update system and install dependencies
+# Update system and install dependencies.
+# curl + unzip fetch protoc; python3-pip installs the betterproto plugin used
+# by the python-proto-gen step below.
 RUN apt-get update && apt-get install -y \
     netcat \
     unzip \
+    curl \
+    python3-pip \
     libpq-dev \
     && apt-get clean
 
@@ -47,12 +54,26 @@ ENV STORAGE_JDBC_URL=${JOOQ_JDBC_URL} \
     STORAGE_JDBC_USERNAME=${JOOQ_JDBC_USERNAME} \
     STORAGE_JDBC_PASSWORD=${JOOQ_JDBC_PASSWORD}
 
+# Install protoc (version pinned in bin/protoc-version.txt) and the betterproto
+# plugin (pinned via amber/requirements.txt), then regenerate the python proto
+# bindings before sbt dist — WorkflowOperator's managedResources task invokes
+# protoc during compile. Mirrors computing-unit-master.dockerfile (#4938).
+COPY bin/protoc-version.txt bin/protoc-version.txt
+COPY bin/python-proto-gen.sh bin/python-proto-gen.sh
+RUN PROTOC_VERSION=$(cat bin/protoc-version.txt) \
+    && curl -fsSL -o /tmp/protoc.zip "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip" \
+    && unzip -o /tmp/protoc.zip -d /usr/local \
+    && chmod +x /usr/local/bin/protoc \
+    && rm /tmp/protoc.zip \
+    && pip3 install --no-cache-dir -c amber/requirements.txt 'betterproto[compiler]' \
+    && bash bin/python-proto-gen.sh
+
 RUN sbt clean WorkflowExecutionService/dist
 
 # Unzip the texera binary
 RUN unzip amber/target/universal/amber-*.zip -d amber/target/
 
-FROM eclipse-temurin:11-jdk-jammy AS runtime
+FROM eclipse-temurin:17-jdk-jammy AS runtime
 
 # Build argument to enable/disable R support (default: false)
 ARG WITH_R_SUPPORT=true

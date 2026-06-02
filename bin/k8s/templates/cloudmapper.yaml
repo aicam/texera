@@ -7,6 +7,11 @@ metadata:
     app: cloudmapper
 spec:
   replicas: {{ .Values.cloudmapper.replicas | default 1 }}
+  # Recreate (not RollingUpdate): cloudmapper mounts a ReadWriteOnce EBS PVC, so
+  # the old pod must release the volume before the new one can attach. RollingUpdate
+  # deadlocks on a Multi-Attach error during upgrades.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: cloudmapper
