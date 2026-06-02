@@ -81,8 +81,8 @@ button {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  height: 44px;
-  padding: 0 16px;
+  min-height: 44px;
+  padding: 8px 16px;
   color: rgba(0, 0, 0, 0.55);
   font-size: 12px;
   letter-spacing: 0.2px;
@@ -90,8 +90,6 @@ button {
   border-top: 1px solid rgba(0, 0, 0, 0.06);
   background: #fff;
   transition: color 0.2s ease, background 0.2s ease;
-  white-space: nowrap;
-  overflow: hidden;
 
   &:hover {
     color: rgba(0, 0, 0, 0.85);
@@ -110,8 +108,10 @@ button {
 }
 
 .sider-attribution-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: break-word;
+  line-height: 1.3;
+  text-align: center;
 }
 
 .logo-section {
