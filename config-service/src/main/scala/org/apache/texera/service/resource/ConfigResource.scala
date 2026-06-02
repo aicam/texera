@@ -43,7 +43,14 @@ class ConfigResource {
         "username" -> GuiConfig.guiLoginDefaultLocalUserUsername,
         "password" -> GuiConfig.guiLoginDefaultLocalUserPassword
       ),
-      "attributionEnabled" -> GuiConfig.guiAttributionEnabled
+      "attributionEnabled" -> GuiConfig.guiAttributionEnabled,
+      // inviteOnly must be readable pre-activation: a freshly-registered user is
+      // INACTIVE and cannot reach the @RolesAllowed("REGULAR","ADMIN") endpoints,
+      // yet the frontend needs this flag to decide whether to show the
+      // registration-request form (and notify admins). Keeping it only on
+      // /user-system (as of #5305) made the form unreachable for exactly the
+      // users it targets.
+      "inviteOnly" -> UserSystemConfig.inviteOnly
     )
 
   @GET
