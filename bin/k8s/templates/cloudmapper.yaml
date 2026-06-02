@@ -17,6 +17,8 @@ spec:
       app: cloudmapper
   template:
     metadata:
+      annotations:
+        karpenter.sh/do-not-disrupt: "true"
       labels:
         app: cloudmapper
     spec:

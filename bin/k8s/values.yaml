@@ -70,6 +70,10 @@ postgresql:
   auth:
     postgresPassword: root_password  # for executing init script with superuser
   primary:
+    # Keep the single-primary Postgres off Karpenter's consolidation path (it
+    # can't be horizontally replicated, so an eviction = a DB outage).
+    podAnnotations:
+      karpenter.sh/do-not-disrupt: "true"
     containerSecurityContext:
       # Disabled because groonga/pgroonga needs to write a lock/socket file to /var/run/postgresql
       readOnlyRootFilesystem: false

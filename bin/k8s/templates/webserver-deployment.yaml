@@ -29,6 +29,8 @@ spec:
       app: {{ .Release.Name }}-{{ .Values.webserver.name }}
   template:
     metadata:
+      annotations:
+        karpenter.sh/do-not-disrupt: "true"
       labels:
         app: {{ .Release.Name }}-{{ .Values.webserver.name }}
     spec:
