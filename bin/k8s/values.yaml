@@ -446,7 +446,7 @@ cloudmapper:
   # from the inline values below when those are set (see cloudmapper-secrets.yaml);
   # otherwise it expects pre-existing Secrets of these names (created out-of-band).
   awsSecret: cloudmapper-aws-credentials  # Secret with AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY
-  sshKeySecret: cloudmapper-ssh-key       # Secret with cloudmapper_id_rsa + cloudmapper_id_rsa.pub
+  sshKeySecret: cloudmapper-ssh-key       # Secret with id_rsa + id_rsa.pub
   # config.yaml is baked into the image at /app/config/config.yaml (not templated).
   # Inline secret material — leave empty to keep using out-of-band Secrets.
   awsAccessKeyId: ""

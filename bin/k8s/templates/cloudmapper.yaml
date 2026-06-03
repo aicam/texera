@@ -76,10 +76,9 @@ spec:
             - name: aws-config-volume
               mountPath: /root/.aws
             - name: ssh-key-volume
-              # Baked config.yaml points private/public_key_path at
-              # ~/.cloudmapper-keys/cloudmapper_id_rsa[.pub] (=/root/.cloudmapper-keys
-              # in-pod). Mount the Secret there with matching filenames.
-              mountPath: /root/.cloudmapper-keys
+              # Must be /root/.ssh: DownloadResult/executeSCPCommand shell out to
+              # ssh/scp without -i, so they rely on the default ~/.ssh/id_rsa.
+              mountPath: /root/.ssh
               readOnly: true
       nodeSelector:
         kubernetes.io/arch: amd64
