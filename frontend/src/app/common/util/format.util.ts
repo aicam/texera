@@ -63,21 +63,18 @@ export const formatRelativeTime = (timestamp: number | undefined): string => {
     return "Unknown";
   }
 
-  const timeDifference = new Date().getTime() - timestamp;
-  const minutesAgo = Math.floor(timeDifference / (1000 * 60));
-  const hoursAgo = Math.floor(timeDifference / (1000 * 60 * 60));
-  const daysAgo = Math.floor(timeDifference / (1000 * 60 * 60 * 24));
+  // count + unit with correct pluralization, e.g. relativeAgo(1, "minute") -> "1 minute ago"
+  const relativeAgo = (count: number, unit: string): string => `${count} ${unit}${count === 1 ? "" : "s"} ago`;
+
+  const minutesAgo = Math.floor((new Date().getTime() - timestamp) / (1000 * 60));
+  const hoursAgo = Math.floor(minutesAgo / 60);
+  const daysAgo = Math.floor(hoursAgo / 24);
   const weeksAgo = Math.floor(daysAgo / 7);
 
-  if (minutesAgo < 60) {
-    return `${minutesAgo} minutes ago`;
-  } else if (hoursAgo < 24) {
-    return `${hoursAgo} hours ago`;
-  } else if (daysAgo < 7) {
-    return `${daysAgo} days ago`;
-  } else if (weeksAgo < 4) {
-    return `${weeksAgo} weeks ago`;
-  }
+  if (minutesAgo < 60) return relativeAgo(minutesAgo, "minute");
+  if (hoursAgo < 24) return relativeAgo(hoursAgo, "hour");
+  if (daysAgo < 7) return relativeAgo(daysAgo, "day");
+  if (weeksAgo < 4) return relativeAgo(weeksAgo, "week");
   return new Date(timestamp).toLocaleDateString();
 };
 
