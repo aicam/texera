@@ -56,7 +56,11 @@
       </thead>
       <tbody>
         <tr *ngFor="let row of basicTable.data">
-          <td *ngFor="let cell of row">{{ cell }}</td>
+          <td
+            *ngFor="let cell of row"
+            [title]="cell | truncate">
+            <span class="preview-cell">{{ cell }}</span>
+          </td>
         </tr>
       </tbody>
     </nz-table>

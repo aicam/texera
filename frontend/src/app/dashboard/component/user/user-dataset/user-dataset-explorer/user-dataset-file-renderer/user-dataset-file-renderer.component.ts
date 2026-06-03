@@ -38,6 +38,7 @@ import {
 } from "ng-zorro-antd/table";
 import { MarkdownComponent } from "ngx-markdown";
 import { NgxJsonViewerModule } from "ngx-json-viewer";
+import { TruncatePipe } from "./truncate.pipe";
 
 export const MIME_TYPES = {
   JPEG: "image/jpeg",
@@ -101,6 +102,7 @@ export const MIME_TYPE_SIZE_LIMITS_MB = {
     NzTbodyComponent,
     MarkdownComponent,
     NgxJsonViewerModule,
+    TruncatePipe,
   ],
 })
 export class UserDatasetFileRendererComponent implements OnInit, OnChanges, OnDestroy {

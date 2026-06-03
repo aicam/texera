@@ -22,6 +22,21 @@
   height: 100%;
 }
 
+/* Keep one oversized value (e.g. a stringified-JSON "crew" column tens of
+   thousands of characters long) from stretching its row to thousands of
+   pixels tall. Truncate each cell to a single line; the full value stays
+   available via the cell's title tooltip, and the table already scrolls on x.
+   The inner span is required because text-overflow is unreliable on a <td>
+   in an auto-layout table — a bounded inline-block truncates dependably. */
+.preview-cell {
+  display: inline-block;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
 /* CSS styles */
 .image-modal {
   position: fixed;
