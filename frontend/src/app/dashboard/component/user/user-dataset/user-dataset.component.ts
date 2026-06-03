@@ -74,7 +74,7 @@ export class UserDatasetComponent implements AfterViewInit {
   lastSortMethod: SortMethod | null = null;
   public isLogin = this.userService.isLogin();
   public viewMode: SearchResultsViewMode =
-    localStorage.getItem(USER_DATASET_VIEW_MODE_STORAGE_KEY) === "list" ? "list" : "card";
+    localStorage.getItem(USER_DATASET_VIEW_MODE_STORAGE_KEY) === "card" ? "card" : "list";
 
   setViewMode(mode: SearchResultsViewMode): void {
     if (this.viewMode === mode) return;
