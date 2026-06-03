@@ -61,7 +61,7 @@ export class HubSearchResultComponent implements OnInit, AfterViewInit {
   public searchKeywords: string[] = [];
   currentUid = this.userService.getCurrentUser()?.uid;
   public viewMode: SearchResultsViewMode =
-    localStorage.getItem(HUB_DATASET_VIEW_MODE_STORAGE_KEY) === "card" ? "card" : "list";
+    localStorage.getItem(HUB_DATASET_VIEW_MODE_STORAGE_KEY) === "list" ? "list" : "card";
 
   setViewMode(mode: SearchResultsViewMode): void {
     if (this.viewMode === mode) return;
