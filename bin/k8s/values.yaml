@@ -442,10 +442,17 @@ cloudmapper:
   image: alirisheh876/cloudmapper:latest
   pullPolicy: IfNotPresent
   awsRegion: us-west-1
-  # Names of cluster-scoped pre-existing resources (created by deploy guide).
+  # Names of the Secrets the deployment consumes. The chart materializes them
+  # from the inline values below when those are set (see cloudmapper-secrets.yaml);
+  # otherwise it expects pre-existing Secrets of these names (created out-of-band).
   awsSecret: cloudmapper-aws-credentials  # Secret with AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY
-  sshKeySecret: cloudmapper-ssh-key       # Secret with id_rsa + id_rsa.pub
-  configMap: cloudmapper-config            # ConfigMap with key 'config.yaml'
+  sshKeySecret: cloudmapper-ssh-key       # Secret with cloudmapper_id_rsa + cloudmapper_id_rsa.pub
+  # config.yaml is baked into the image at /app/config/config.yaml (not templated).
+  # Inline secret material — leave empty to keep using out-of-band Secrets.
+  awsAccessKeyId: ""
+  awsSecretAccessKey: ""
+  sshPrivateKey: ""
+  sshPublicKey: ""
   storageClass: local-path
   persistenceSize: 10Gi
   resources:
