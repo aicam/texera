@@ -28,6 +28,7 @@ import { UserComputingUnitComponent } from "./dashboard/component/user/user-comp
 import { ClusterComponent } from "./dashboard/component/user/cluster/cluster.component";
 import { WorkspaceComponent } from "./workspace/component/workspace.component";
 import { AboutComponent } from "./hub/component/about/about.component";
+import { AboutPageComponent } from "./hub/component/about-page/about-page.component";
 import { AuthGuardService } from "./common/service/user/auth-guard.service";
 import { AdminUserComponent } from "./dashboard/component/admin/user/admin-user.component";
 import { AdminExecutionComponent } from "./dashboard/component/admin/execution/admin-execution.component";
@@ -66,6 +67,12 @@ routes.push({
       component: AboutComponent,
     },
     {
+      // Standalone About page (feature overview). Lives at "/about" so the
+      // sidebar "About" link no longer redirects back to the landing hero.
+      path: "about",
+      component: AboutPageComponent,
+    },
+    {
       path: "dashboard",
       children: [
         {
@@ -73,9 +80,10 @@ routes.push({
           component: LandingPageComponent,
         },
         {
-          // Legacy URL: keep /dashboard/about working but redirect it to /.
+          // Legacy URL: keep /dashboard/about working but redirect it to the
+          // standalone About page at /about.
           path: "about",
-          redirectTo: "/",
+          redirectTo: "/about",
           pathMatch: "full",
         },
         {

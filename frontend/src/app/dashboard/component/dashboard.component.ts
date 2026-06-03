@@ -29,6 +29,7 @@ import { AdminSettingsService } from "../service/admin/settings/admin-settings.s
 import { GuiConfigService } from "../../common/service/gui-config.service";
 
 import {
+  ABOUT,
   DASHBOARD_ABOUT,
   DASHBOARD_ADMIN_EXECUTION,
   DASHBOARD_ADMIN_GMAIL,
@@ -249,7 +250,20 @@ export class DashboardComponent implements OnInit {
     if (this.isAboutPage(currentRoute)) {
       return false;
     }
+    // The standalone /about feature page is immersive (its own hero +
+    // animated backdrop), so drop the search-bar navbar there too. The
+    // sidebar stays expanded so the page is still navigable.
+    if (this.isAboutContentPage(currentRoute)) {
+      return false;
+    }
     return true;
+  }
+
+  // The standalone About feature page at /about (distinct from the landing
+  // hero at "/"). Kept separate from isAboutPage so it does NOT collapse the
+  // sidebar — only the navbar is hidden.
+  private isAboutContentPage(url: string): boolean {
+    return url === ABOUT || url.startsWith(`${ABOUT}?`) || url.startsWith(`${ABOUT}#`);
   }
 
   // The About / landing page now lives at "/" (with a legacy redirect from
@@ -270,5 +284,6 @@ export class DashboardComponent implements OnInit {
   }
 
   protected readonly DASHBOARD_ABOUT = DASHBOARD_ABOUT;
+  protected readonly ABOUT = ABOUT;
   protected readonly String = String;
 }

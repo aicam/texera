@@ -1,0 +1,22 @@
+Overview of dknet-ai.org
+
+An AI and Data Science Computational Platform for dkNET
+
+dkNET-AI.org is a computational platform designed to assist biomedical researchers in developing hypotheses utilizing the latest AI and data science techniques on the cloud. The platform empowers researchers to perform a diverse range of bioinformatics analytical tasks easily. The platform is powered by Apache Texera (Incubating).
+
+The platform offers several tools and AI assistants for the diabetes research community:
+
+AI agents for data science using visual dataflows: Get help building and debugging workflows from an in-platform AI assistant that can suggest operators, write Python and R code, and explain results, and query biomedical databases and tools.
+[picture workflow_chatbot.png]
+
+
+Computing resources on a need basis: Request dedicated computing power to run your analyses on demand, scaling up for larger datasets or more demanding tasks.
+[picture computing_unit.png]
+
+Single-cell RNA sequencing analysis: Follow a complete, guided example of taking a single-cell RNA-seq dataset from raw data through analysis to results, entirely in the GUI-based workflow editor.
+[picture R_udf.png]
+
+
+CloudBioMapper for sequence alignment: Run sequence-alignment tasks faster by launching on-demand clusters on the cloud and aligning in parallel with pay-as-you-go scaling.
+[picture cloudbiomapper.png]
+

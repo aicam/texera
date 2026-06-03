@@ -23,6 +23,10 @@ export const DASHBOARD_HOME = `${DASHBOARD}/home`;
 // just dknet-ai.org instead of dknet-ai.org/dashboard/about. The legacy
 // /dashboard/about path still resolves via a redirect in AppRoutingModule.
 export const DASHBOARD_ABOUT = "/";
+// Standalone "About dkNET-AI" page (feature overview from the dkNET team).
+// Distinct from the landing hero at "/" so clicking "About" no longer bounces
+// the user back to the landing page.
+export const ABOUT = "/about";
 
 export const DASHBOARD_HUB = `${DASHBOARD}/hub`;
 export const DASHBOARD_HUB_WORKFLOW = `${DASHBOARD_HUB}/workflow`;

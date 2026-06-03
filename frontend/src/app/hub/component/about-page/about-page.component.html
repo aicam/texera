@@ -1,0 +1,326 @@
+<!--
+ Licensed to the Apache Software Foundation (ASF) under one
+ or more contributor license agreements.  See the NOTICE file
+ distributed with this work for additional information
+ regarding copyright ownership.  The ASF licenses this file
+ to you under the Apache License, Version 2.0 (the
+ "License"); you may not use this file except in compliance
+ with the License.  You may obtain a copy of the License at
+
+   http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing,
+ software distributed under the License is distributed on an
+ "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ KIND, either express or implied.  See the License for the
+ specific language governing permissions and limitations
+ under the License.
+-->
+
+<div class="about-root">
+  <!-- Sticky animated backdrop: stays fixed in the frame while the content
+       scrolls over it. Reuses the landing hero's bg image + cyan/magenta
+       palette (flow trails, AI aurora, drifting motes) for visual continuity. -->
+  <div
+    class="about-backdrop"
+    aria-hidden="true">
+    <div class="backdrop-overlay"></div>
+
+    <svg
+      class="flow-svg"
+      viewBox="0 0 1600 900"
+      preserveAspectRatio="xMidYMid slice">
+      <defs>
+        <radialGradient
+          id="aboutDotCyan"
+          cx="50%"
+          cy="50%"
+          r="50%">
+          <stop
+            offset="0%"
+            stop-color="#cfe9ff"
+            stop-opacity="1" />
+          <stop
+            offset="40%"
+            stop-color="#4ec3ff"
+            stop-opacity="0.95" />
+          <stop
+            offset="100%"
+            stop-color="#4ec3ff"
+            stop-opacity="0" />
+        </radialGradient>
+        <radialGradient
+          id="aboutDotMagenta"
+          cx="50%"
+          cy="50%"
+          r="50%">
+          <stop
+            offset="0%"
+            stop-color="#fbe6ff"
+            stop-opacity="1" />
+          <stop
+            offset="40%"
+            stop-color="#b54bff"
+            stop-opacity="0.95" />
+          <stop
+            offset="100%"
+            stop-color="#b54bff"
+            stop-opacity="0" />
+        </radialGradient>
+
+        <path
+          id="aboutFlow1"
+          d="M120,540 C420,440 800,380 1190,220" />
+        <path
+          id="aboutFlow2"
+          d="M1190,220 C1370,280 1480,440 1530,660" />
+        <path
+          id="aboutFlow3"
+          d="M1190,220 C840,230 470,330 90,440" />
+        <path
+          id="aboutFlow4"
+          d="M1090,800 C1140,600 1180,400 1200,230" />
+      </defs>
+
+      <use
+        href="#aboutFlow1"
+        class="flow-path flow-path--cyan" />
+      <use
+        href="#aboutFlow2"
+        class="flow-path flow-path--cyan" />
+      <use
+        href="#aboutFlow3"
+        class="flow-path flow-path--magenta" />
+      <use
+        href="#aboutFlow4"
+        class="flow-path flow-path--magenta" />
+
+      <g class="flow-particle">
+        <circle
+          r="4"
+          fill="url(#aboutDotCyan)">
+          <animateMotion
+            dur="7s"
+            repeatCount="indefinite"
+            rotate="auto"><mpath href="#aboutFlow1" /></animateMotion>
+        </circle>
+        <circle
+          r="3"
+          fill="url(#aboutDotCyan)">
+          <animateMotion
+            dur="7s"
+            begin="3.5s"
+            repeatCount="indefinite"
+            rotate="auto"><mpath href="#aboutFlow1" /></animateMotion>
+        </circle>
+        <circle
+          r="4"
+          fill="url(#aboutDotCyan)">
+          <animateMotion
+            dur="8s"
+            repeatCount="indefinite"
+            rotate="auto"><mpath href="#aboutFlow2" /></animateMotion>
+        </circle>
+        <circle
+          r="3"
+          fill="url(#aboutDotMagenta)">
+          <animateMotion
+            dur="9s"
+            repeatCount="indefinite"
+            rotate="auto"><mpath href="#aboutFlow3" /></animateMotion>
+        </circle>
+        <circle
+          r="4"
+          fill="url(#aboutDotMagenta)">
+          <animateMotion
+            dur="8.5s"
+            begin="2s"
+            repeatCount="indefinite"
+            rotate="auto"><mpath href="#aboutFlow4" /></animateMotion>
+        </circle>
+      </g>
+    </svg>
+
+    <!-- Aurora around the AI hub (top-right), mirroring the landing hero. -->
+    <div class="ai-hub">
+      <span class="ai-hub-glow"></span>
+      <span class="ai-hub-ring ai-hub-ring--outer"></span>
+      <span class="ai-hub-ring ai-hub-ring--inner"></span>
+    </div>
+
+    <span
+      *ngFor="let m of motes"
+      class="mote"
+      [style.left.%]="m.x"
+      [style.top.%]="m.y"
+      [style.--mote-dx.px]="m.dx"
+      [style.animation-duration.s]="m.dur"
+      [style.animation-delay.s]="m.delay"></span>
+  </div>
+
+  <!-- Scrolling content sits above the sticky backdrop. -->
+  <div class="about-content">
+    <!-- ── Hero / overview ─────────────────────────────────────────────── -->
+    <header class="about-hero">
+      <div
+        #reveal
+        class="reveal hero-inner">
+        <img
+          class="about-logo"
+          src="assets/landing/dknet-3d-large.png"
+          alt="dkNET-AI logo" />
+        <p class="hero-kicker">
+          dkNET<span class="dot">·</span>AI
+        </p>
+        <h1 class="hero-title">An AI and Data Science Computational Platform for dkNET</h1>
+        <p class="hero-lede">
+          <a
+            href="https://dknet-ai.org"
+            target="_blank"
+            rel="noopener">dkNET-AI.org</a>
+          is a computational platform designed to assist biomedical researchers in developing hypotheses
+          utilizing the latest AI and data science techniques on the cloud. The platform empowers researchers
+          to perform a diverse range of bioinformatics analytical tasks easily — powered by
+          <a
+            href="https://texera.apache.org"
+            target="_blank"
+            rel="noopener">Apache Texera (Incubating)</a>.
+        </p>
+        <div class="hero-actions">
+          <ng-container *ngIf="(isLogin$ | async); else heroSignin">
+            <button
+              type="button"
+              class="btn btn--primary"
+              (click)="getStarted()">
+              Get started
+            </button>
+          </ng-container>
+          <!-- Signed out: a styled "Get started" pill with an invisible Google
+               sign-in button laid over it, so the click opens Google login
+               directly. Falls back to the plain button if Google login is off. -->
+          <ng-template #heroSignin>
+            <div class="cta-google">
+              <button
+                type="button"
+                class="btn btn--primary"
+                (click)="getStarted()">
+                Get started
+              </button>
+              <asl-google-signin-button
+                *ngIf="config.env.googleLogin"
+                class="cta-google__overlay"
+                type="standard"
+                size="large"
+                shape="pill"
+                [width]="240"></asl-google-signin-button>
+            </div>
+          </ng-template>
+        </div>
+      </div>
+
+      <div
+        class="scroll-cue"
+        aria-hidden="true">
+        <span class="scroll-cue-text">What you can do</span>
+        <span class="scroll-cue-chevron"></span>
+      </div>
+    </header>
+
+    <!-- ── Feature pipeline ────────────────────────────────────────────── -->
+    <section
+      id="features"
+      class="pipeline">
+      <!-- The glowing spine that threads the feature nodes together. -->
+      <div
+        class="pipeline-spine"
+        aria-hidden="true"></div>
+
+      <article
+        *ngFor="let f of features; let i = index; let last = last"
+        class="feature"
+        [class.feature--reverse]="i % 2 === 1"
+        [ngClass]="'feature--' + f.accent">
+        <!-- Node on the spine -->
+        <div
+          class="feature-node"
+          aria-hidden="true">
+          <span class="feature-node-dot"></span>
+          <span class="feature-node-index">{{ i + 1 }}</span>
+        </div>
+
+        <!-- Copy -->
+        <div
+          #reveal
+          class="reveal feature-copy">
+          <p class="feature-eyebrow">{{ f.eyebrow }}</p>
+          <h2 class="feature-title">{{ f.title }}</h2>
+          <p class="feature-body">{{ f.body }}</p>
+        </div>
+
+        <!-- Screenshot in a glowing glass frame -->
+        <figure
+          #reveal
+          class="reveal feature-shot">
+          <div class="shot-frame">
+            <div
+              class="shot-chrome"
+              aria-hidden="true">
+              <span class="shot-dot"></span>
+              <span class="shot-dot"></span>
+              <span class="shot-dot"></span>
+            </div>
+            <img
+              class="shot-img"
+              [src]="f.image"
+              [alt]="f.alt"
+              loading="lazy" />
+          </div>
+        </figure>
+      </article>
+    </section>
+
+    <!-- ── Closing / CTA ───────────────────────────────────────────────── -->
+    <footer class="about-cta">
+      <div
+        #reveal
+        class="reveal cta-inner">
+        <h2 class="cta-title">Build your next hypothesis on dkNET-AI</h2>
+        <p class="cta-body">
+          From AI-assisted dataflows to on-demand clusters — start exploring your data in the browser.
+        </p>
+        <ng-container *ngIf="(isLogin$ | async); else ctaSignin">
+          <button
+            type="button"
+            class="btn btn--primary btn--lg"
+            (click)="getStarted()">
+            Get started
+          </button>
+        </ng-container>
+        <ng-template #ctaSignin>
+          <div class="cta-google cta-google--lg">
+            <button
+              type="button"
+              class="btn btn--primary btn--lg"
+              (click)="getStarted()">
+              Get started
+            </button>
+            <asl-google-signin-button
+              *ngIf="config.env.googleLogin"
+              class="cta-google__overlay"
+              type="standard"
+              size="large"
+              shape="pill"
+              [width]="260"></asl-google-signin-button>
+          </div>
+        </ng-template>
+        <p class="cta-powered">
+          Powered by
+          <a
+            href="https://texera.apache.org"
+            target="_blank"
+            rel="noopener">Apache Texera (Incubating)</a>
+        </p>
+      </div>
+    </footer>
+  </div>
+</div>
