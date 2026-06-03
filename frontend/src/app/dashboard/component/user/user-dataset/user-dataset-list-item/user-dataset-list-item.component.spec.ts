@@ -66,7 +66,6 @@ function makeEntry(overrides: Partial<DashboardDataset> = {}): DashboardDataset 
       storagePath: undefined,
       description: "original description",
       creationTime: 0,
-      coverImage: undefined,
     },
     ...overrides,
   };

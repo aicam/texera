@@ -254,4 +254,8 @@
       </nz-content>
     </nz-layout>
   </div>
+
+  <!-- Docked AI agent panel: a flex sibling so the content shrinks instead of being
+       overlapped. Hidden on the workspace (which has its own floating panel). -->
+  <texera-agent-dock *ngIf="showAgentDock"></texera-agent-dock>
 </nz-layout>

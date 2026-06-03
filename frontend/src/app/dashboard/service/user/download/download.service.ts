@@ -162,10 +162,10 @@ export class DownloadService {
       computingUnitId,
     };
 
-    const urlPath =
-      unit && unit.computingUnit.type == "kubernetes" && unit.computingUnit?.cuid
-        ? `${WORKFLOW_EXECUTIONS_API_BASE_URL}/${EXPORT_BASE_URL}/dataset?cuid=${unit.computingUnit.cuid}`
-        : `${WORKFLOW_EXECUTIONS_API_BASE_URL}/${EXPORT_BASE_URL}/dataset`;
+    // Result export is handled by the Dashboard service, which reads the committed result from the
+    // shared Iceberg (Lakekeeper) catalog; it is no longer routed to the computing unit. The target
+    // execution is identified by computingUnitId in the request body.
+    const urlPath = `${WORKFLOW_EXECUTIONS_API_BASE_URL}/${EXPORT_BASE_URL}/dataset`;
 
     return this.http.post<ExportWorkflowJsonResponse>(urlPath, requestBody, {
       responseType: "json",
@@ -208,10 +208,9 @@ export class DownloadService {
     };
     const token = localStorage.getItem(TOKEN_KEY) ?? "";
 
-    const urlPath =
-      unit && unit.computingUnit.type == "kubernetes" && unit.computingUnit?.cuid
-        ? `${WORKFLOW_EXECUTIONS_API_BASE_URL}/${EXPORT_BASE_URL}/local?cuid=${unit.computingUnit.cuid}`
-        : `${WORKFLOW_EXECUTIONS_API_BASE_URL}/${EXPORT_BASE_URL}/local`;
+    // Handled by the Dashboard service (reads the committed result from the shared Iceberg/Lakekeeper
+    // catalog), not the computing unit; the target execution is identified by computingUnitId in body.
+    const urlPath = `${WORKFLOW_EXECUTIONS_API_BASE_URL}/${EXPORT_BASE_URL}/local`;
 
     const iframe = document.createElement("iframe");
     iframe.name = "download-iframe";

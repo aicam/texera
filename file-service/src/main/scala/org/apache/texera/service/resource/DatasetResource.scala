@@ -61,7 +61,7 @@ import org.jooq.impl.DSL.{inline => inl}
 import org.jooq.{DSLContext, EnumType, Record2, Result}
 
 import java.io.{InputStream, OutputStream}
-import java.net.{HttpURLConnection, URI, URL, URLDecoder}
+import java.net.{HttpURLConnection, URL, URLDecoder}
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Paths}
 import java.util
@@ -211,7 +211,6 @@ object DatasetResource {
       size: Long
   )
 
-  case class CoverImageRequest(coverImage: String)
 }
 
 @Produces(Array(MediaType.APPLICATION_JSON, "image/jpeg", "application/pdf"))
@@ -220,9 +219,6 @@ class DatasetResource extends LazyLogging {
   private val ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE = "User has no access to this dataset"
   private val ERR_DATASET_VERSION_NOT_FOUND_MESSAGE = "The version of the dataset not found"
   private val EXPIRATION_MINUTES = 5
-
-  private val COVER_IMAGE_SIZE_LIMIT_BYTES: Long = 10 * 1024 * 1024 // 10 MB
-  private val ALLOWED_IMAGE_EXTENSIONS: Set[String] = Set(".jpg", ".jpeg", ".png", ".gif", ".webp")
 
   /**
     * Helper function to get the dataset from DB with additional information including user access privilege and owner email
@@ -638,6 +634,26 @@ class DatasetResource extends LazyLogging {
   ): Response = {
     val uid = user.getUid
     generatePresignedResponse(encodedUrl, repositoryName, commitHash, uid)
+  }
+
+  /**
+    * Resolves a dataset path (`/ownerEmail/datasetName/versionName/relativePath`) to its
+    * `dataset:///` URI and returns it as plain text. This is the database-backed counterpart of
+    * [[org.apache.texera.amber.core.storage.RemoteDatasetResolver]], letting a computing unit
+    * resolve datasets over HTTP instead of querying Postgres directly (issue #5011).
+    */
+  @GET
+  @RolesAllowed(Array("REGULAR", "ADMIN"))
+  @Path("/resolve")
+  @Produces(Array(MediaType.TEXT_PLAIN))
+  def resolveDatasetPath(
+      @QueryParam("path") path: String,
+      @Auth user: SessionUser
+  ): String = {
+    if (path == null || path.trim.isEmpty) {
+      throw new BadRequestException("query parameter 'path' is required")
+    }
+    FileResolver.resolve(path).toString
   }
 
   @GET
@@ -2076,155 +2092,4 @@ class DatasetResource extends LazyLogging {
     Response.ok(Map("message" -> "Multipart upload aborted successfully")).build()
   }
 
-  /**
-    * Updates the cover image for a dataset.
-    *
-    * @param did Dataset ID
-    * @param request Cover image request containing the relative file path
-    * @param sessionUser Authenticated user session
-    * @return Response with updated cover image path
-    *
-    * Expected coverImage format: "version/folder/image.jpg" (relative to dataset root)
-    */
-  @POST
-  @RolesAllowed(Array("REGULAR", "ADMIN"))
-  @Path("/{did}/update/cover")
-  @Consumes(Array(MediaType.APPLICATION_JSON))
-  def updateDatasetCoverImage(
-      @PathParam("did") did: Integer,
-      request: CoverImageRequest,
-      @Auth sessionUser: SessionUser
-  ): Response = {
-    withTransaction(context) { ctx =>
-      val uid = sessionUser.getUid
-      val dataset = getDatasetByID(ctx, did)
-      if (!userHasWriteAccess(ctx, did, uid)) {
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
-      }
-
-      if (request.coverImage == null || request.coverImage.trim.isEmpty) {
-        throw new BadRequestException("Cover image path is required")
-      }
-
-      val normalized = DatasetResource.validateAndNormalizeFilePathOrThrow(request.coverImage)
-
-      val extension = FilenameUtils.getExtension(normalized)
-      if (extension == null || !ALLOWED_IMAGE_EXTENSIONS.contains(s".$extension".toLowerCase)) {
-        throw new BadRequestException("Invalid file type")
-      }
-
-      val owner = getOwner(ctx, did)
-      val document = DocumentFactory
-        .openReadonlyDocument(
-          FileResolver.resolve(s"${owner.getEmail}/${dataset.getName}/$normalized")
-        )
-        .asInstanceOf[OnDataset]
-
-      val fileSize = LakeFSStorageClient.getFileSize(
-        document.getRepositoryName(),
-        document.getVersionHash(),
-        document.getFileRelativePath()
-      )
-
-      if (fileSize > COVER_IMAGE_SIZE_LIMIT_BYTES) {
-        throw new BadRequestException(
-          s"Cover image must be less than ${COVER_IMAGE_SIZE_LIMIT_BYTES / (1024 * 1024)} MB"
-        )
-      }
-
-      dataset.setCoverImage(normalized)
-      new DatasetDao(ctx.configuration()).update(dataset)
-      Response.ok(Map("coverImage" -> normalized)).build()
-    }
-  }
-
-  /**
-    * Get the cover image for a dataset.
-    * Returns a 307 redirect to the presigned S3 URL.
-    *
-    * @param did Dataset ID
-    * @return 307 Temporary Redirect to cover image
-    */
-  @GET
-  @Path("/{did}/cover")
-  def getDatasetCover(
-      @PathParam("did") did: Integer,
-      @Auth sessionUser: Optional[SessionUser]
-  ): Response = {
-    withTransaction(context) { ctx =>
-      val dataset = getDatasetByID(ctx, did)
-
-      val requesterUid = if (sessionUser.isPresent) Some(sessionUser.get().getUid) else None
-
-      if (requesterUid.isEmpty && !dataset.getIsPublic) {
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
-      } else if (requesterUid.exists(uid => !userHasReadAccess(ctx, did, uid))) {
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
-      }
-
-      val coverImage = Option(dataset.getCoverImage).getOrElse(
-        throw new NotFoundException("No cover image")
-      )
-
-      val owner = getOwner(ctx, did)
-      val fullPath = s"${owner.getEmail}/${dataset.getName}/$coverImage"
-
-      val document = DocumentFactory
-        .openReadonlyDocument(FileResolver.resolve(fullPath))
-        .asInstanceOf[OnDataset]
-
-      val presignedUrl = LakeFSStorageClient.getFilePresignedUrl(
-        document.getRepositoryName(),
-        document.getVersionHash(),
-        document.getFileRelativePath()
-      )
-
-      Response.temporaryRedirect(new URI(presignedUrl)).build()
-    }
-  }
-
-  /**
-    * Get a presigned S3 URL for the dataset cover image as JSON.
-    * JWT-aware variant of GET /{did}/cover; required for private datasets
-    * since `<img src>` cannot attach the Authorization header.
-    */
-  @GET
-  @Path("/{did}/cover-url")
-  @Produces(Array(MediaType.APPLICATION_JSON))
-  def getDatasetCoverUrl(
-      @PathParam("did") did: Integer,
-      @Auth sessionUser: Optional[SessionUser]
-  ): Response = {
-    withTransaction(context) { ctx =>
-      val dataset = getDatasetByID(ctx, did)
-
-      val requesterUid = if (sessionUser.isPresent) Some(sessionUser.get().getUid) else None
-
-      if (requesterUid.isEmpty && !dataset.getIsPublic) {
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
-      } else if (requesterUid.exists(uid => !userHasReadAccess(ctx, did, uid))) {
-        throw new ForbiddenException(ERR_USER_HAS_NO_ACCESS_TO_DATASET_MESSAGE)
-      }
-
-      Option(dataset.getCoverImage) match {
-        case None =>
-          Response.ok(Map("url" -> null)).build()
-        case Some(coverImage) =>
-          val owner = getOwner(ctx, did)
-          val fullPath = s"${owner.getEmail}/${dataset.getName}/$coverImage"
-
-          val document = DocumentFactory
-            .openReadonlyDocument(FileResolver.resolve(fullPath))
-            .asInstanceOf[OnDataset]
-
-          val presignedUrl = LakeFSStorageClient.getFilePresignedUrl(
-            document.getRepositoryName(),
-            document.getVersionHash(),
-            document.getFileRelativePath()
-          )
-
-          Response.ok(Map("url" -> presignedUrl)).build()
-      }
-    }
-  }
 }

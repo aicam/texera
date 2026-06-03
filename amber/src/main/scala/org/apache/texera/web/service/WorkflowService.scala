@@ -57,7 +57,7 @@ import org.apache.texera.web.service.WorkflowService.mkWorkflowStateId
 import org.apache.texera.web.storage.ExecutionStateStore.updateWorkflowState
 import org.apache.texera.web.storage.{ExecutionStateStore, WorkflowStateStore}
 import org.apache.texera.web.{SubscriptionManager, WorkflowLifecycleManager}
-import org.apache.texera.workflow.LogicalPlan
+import org.apache.texera.amber.compiler.model.LogicalPlan
 import play.api.libs.json.Json
 
 import java.net.URI
@@ -107,19 +107,30 @@ class WorkflowService(
 
   val resultService: ExecutionResultService =
     new ExecutionResultService(workflowId, computingUnitId, stateStore)
-  val cacheService: OperatorPortCacheService = {
-    val dao = new org.apache.texera.web.dao.OperatorPortCacheDao(
-      org.apache.texera.dao.SqlServer.getInstance()
-    )
-    new OperatorPortCacheService(dao)
-  }
+  // Operator-port-result cache. On a Postgres-free computing unit (issue #5011) the persistence is
+  // routed to the Dashboard Service over HTTP (RemoteOperatorPortCacheService); on the dashboard
+  // itself (which holds STORAGE_JDBC_*) it talks to Postgres directly.
+  val cacheService: OperatorPortCache =
+    if (RemoteExecutionMetadata.enabled) new RemoteOperatorPortCacheService()
+    else
+      new OperatorPortCacheService(
+        new org.apache.texera.web.dao.OperatorPortCacheDao(org.apache.texera.dao.SqlServer.getInstance())
+      )
   val lifeCycleManager: WorkflowLifecycleManager = new WorkflowLifecycleManager(
     s"workflowId=$workflowId",
     cleanUpTimeout,
     () => {
-      // Clear execution-scoped artifacts (runtime stats, result/console docs) for all executions.
-      val executionIds = WorkflowExecutionService.getExecutionIds(workflowId, computingUnitId)
-      clearExecutionResources(executionIds)
+      // Clear execution-scoped artifacts (runtime stats, result/console docs, cache entries) for all
+      // executions. This runs on a lifecycle timer with no request context (hence no per-execution
+      // user token); it is best-effort, so a metadata failure here must never propagate and tear
+      // down the session.
+      try {
+        val executionIds = WorkflowExecutionService.getExecutionIds(workflowId, computingUnitId)
+        clearExecutionResources(executionIds)
+      } catch {
+        case e: Throwable =>
+          logger.warn(s"Best-effort end-of-session cleanup failed (continuing): ${e.getMessage}")
+      }
       WorkflowService.workflowServiceMapping.remove(mkWorkflowStateId(workflowId))
       if (executionService.getValue != null) {
         // shutdown client
@@ -137,7 +148,7 @@ class WorkflowService(
         (oldState, newState) =>
           {
             if (oldState.state != COMPLETED && newState.state == COMPLETED) {
-              lastCompletedLogicalPlan = Option.apply(executionService.workflow.logicalPlan)
+              lastCompletedLogicalPlan = executionService.workflow.logicalPlan
             }
             Iterable.empty
           }
@@ -209,31 +220,29 @@ class WorkflowService(
       executionService.getValue.unsubscribeAll()
     }
 
+    // The execution owner is optional here: a no-auth computing unit has no local user, so it sends
+    // no uid and the dashboard service resolves the owner from the forwarded token. The DB's NOT NULL
+    // constraint on uid is surfaced as a readable error by ExecutionsMetadataPersistService if needed.
     val (uidOpt, userEmailOpt) = userOpt.map(user => (user.getUid, user.getEmail)).unzip
 
-    // uid is NOT NULL in the DB; fail early here rather than letting the insert fail downstream.
-    val uid = uidOpt.getOrElse(
-      throw new IllegalArgumentException(
-        "Cannot start execution: a user id (uid) is required but none was provided."
-      )
-    )
-
     val workflowContext: WorkflowContext = createWorkflowContext()
+    // The issuing user's JWT travels in the request; the CU forwards it on its outbound calls.
+    workflowContext.userJwtToken = req.userJwtToken
     var controllerConf = ControllerConfig.default
 
-    // clean up results from previous run
-//    val previousExecutionId =
-//      WorkflowExecutionService.getLatestExecutionId(workflowId, req.computingUnitId)
-//    previousExecutionId.foreach(eid => {
-//      clearExecutionResources(eid)
-//    }) // TODO: change this behavior after enabling cache.
+    // NOTE: the previous run's results are intentionally NOT cleaned up here. Operator-port-result
+    // caching reuses materialized outputs across executions of the same workflow, so prior results
+    // must survive into the next run. Stale resources are reclaimed by the lifecycle-timer cleanup
+    // (which invalidates cache entries by source execution). The new execution's per-execution token
+    // is registered below via insertNewExecution -> RemoteExecutionMetadata.createExecution.
 
     workflowContext.executionId = ExecutionsMetadataPersistService.insertNewExecution(
       workflowContext.workflowId,
-      uid,
+      uidOpt.orNull,
       req.executionName,
       convertToJson(req.engineVersion),
-      req.computingUnitId
+      req.computingUnitId,
+      req.userJwtToken
     )
 
     if (ApplicationConfig.faultToleranceLogRootFolder.isDefined) {
@@ -347,48 +356,67 @@ class WorkflowService(
     if (executionIds.isEmpty) {
       return
     }
+    // Cleanup is best-effort housekeeping: it reaches the dashboard for these executions' resource
+    // URIs and cache rows, which can fail (e.g. no usable token for an execution this CU didn't
+    // create this run). A failure here must not crash the run that triggered the cleanup, so swallow
+    // and log it. The per-execution tokens are always dropped afterwards to keep the registry bounded.
+    try {
+      val runtimeStatsUris =
+        executionIds.flatMap(eid =>
+          WorkflowExecutionsResource.getRuntimeStatsUriByExecutionId(eid).toList
+        )
 
-    val runtimeStatsUris =
-      executionIds.flatMap(eid => WorkflowExecutionsResource.getRuntimeStatsUriByExecutionId(eid).toList)
+      // Invalidate cache artifacts produced by these executions (cache rows + cached docs +
+      // cache-linked operator_port_executions rows). On the Postgres-free CU this is routed to the
+      // dashboard over HTTP.
+      val cacheInvalidation =
+        cacheService.invalidateCacheBySourceExecutionsWithArtifacts(executionIds)
 
-    // Invalidate cache artifacts produced by these executions.
-    val cacheInvalidation = cacheService.invalidateCacheBySourceExecutionsWithArtifacts(executionIds)
+      val resultUris = executionIds
+        .flatMap(WorkflowExecutionsResource.getResultUrisByExecutionId)
+        .filterNot(cacheInvalidation.deletedResultUris.contains)
+      val consoleMessagesUris =
+        executionIds.flatMap(WorkflowExecutionsResource.getConsoleMessagesUriByExecutionId)
 
-    val resultUris = executionIds
-      .flatMap(WorkflowExecutionsResource.getResultUrisByExecutionId)
-      .filterNot(cacheInvalidation.deletedResultUris.contains)
-    val consoleMessagesUris =
-      executionIds.flatMap(WorkflowExecutionsResource.getConsoleMessagesUriByExecutionId)
+      // Remove references from registry first
+      executionIds.foreach(WorkflowExecutionsResource.deleteConsoleMessageAndExecutionResultUris)
 
-    // Remove references from registry first
-    executionIds.foreach(WorkflowExecutionsResource.deleteConsoleMessageAndExecutionResultUris)
-
-    // Clean up all result and console message documents
-    (resultUris ++ consoleMessagesUris).distinct.foreach { uri =>
-      try DocumentFactory.openDocument(uri)._1.clear()
-      catch {
-        case error: Throwable =>
-          logger.debug(s"Error processing document at $uri: ${error.getMessage}")
-      }
-    }
-
-    // Expire any Iceberg snapshots for runtime statistics
-    runtimeStatsUris.distinct.foreach { uri =>
-      try {
-        DocumentFactory.openDocument(uri)._1 match {
-          case iceberg: OnIceberg => iceberg.expireSnapshots()
-          case other =>
-            logger.error(
-              s"Cannot expire snapshots: document from URI [$uri] is of type ${other.getClass.getName}. " +
-                s"Expected an instance of ${classOf[OnIceberg].getName}."
-            )
+      // Clean up all result and console message documents
+      (resultUris ++ consoleMessagesUris).distinct.foreach { uri =>
+        try DocumentFactory.openDocument(uri)._1.clear()
+        catch {
+          case error: Throwable =>
+            logger.debug(s"Error processing document at $uri: ${error.getMessage}")
         }
-      } catch {
-        case error: Throwable =>
-          logger.debug(s"Error processing document at $uri: ${error.getMessage}")
       }
+
+      // Expire any Iceberg snapshots for runtime statistics
+      runtimeStatsUris.distinct.foreach { uri =>
+        try {
+          DocumentFactory.openDocument(uri)._1 match {
+            case iceberg: OnIceberg => iceberg.expireSnapshots()
+            case other =>
+              logger.error(
+                s"Cannot expire snapshots: document from URI [$uri] is of type ${other.getClass.getName}. " +
+                  s"Expected an instance of ${classOf[OnIceberg].getName}."
+              )
+          }
+        } catch {
+          case error: Throwable =>
+            logger.debug(s"Error processing document at $uri: ${error.getMessage}")
+        }
+      }
+      // Delete large binaries
+      LargeBinaryManager.deleteAllObjects()
+    } catch {
+      case e: Throwable =>
+        logger.warn(
+          s"Best-effort cleanup of executions ${executionIds.map(_.id).mkString(",")} failed " +
+            s"(continuing): ${e.getMessage}"
+        )
+    } finally {
+      // Drop any remembered per-execution tokens so the registry stays bounded to live executions.
+      executionIds.foreach(eid => RemoteExecutionMetadata.clearExecutionToken(eid.id))
     }
-    // Delete large binaries
-    LargeBinaryManager.deleteAllObjects()
   }
 }

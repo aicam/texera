@@ -22,7 +22,7 @@ package org.apache.texera.workflow
 import org.apache.texera.amber.core.workflow.{PortIdentity, WorkflowContext}
 import org.apache.texera.amber.operator.TestOperators
 import org.apache.texera.amber.operator.source.scan.csv.CSVScanSourceOpDesc
-import org.apache.texera.web.model.websocket.request.LogicalPlanPojo
+import org.apache.texera.amber.compiler.model.{LogicalLink, LogicalPlanPojo}
 import org.scalatest.flatspec.AnyFlatSpec
 
 /**
@@ -68,7 +68,7 @@ class WorkflowCompilerSpec extends AnyFlatSpec {
       )
     )
 
-    assert(workflow.logicalPlan.operators.size == 2)
+    assert(workflow.logicalPlan.get.operators.size == 2)
     assert(workflow.physicalPlan.getPhysicalOpsOfLogicalOp(csv.operatorIdentifier).nonEmpty)
     assert(workflow.physicalPlan.getPhysicalOpsOfLogicalOp(keyword.operatorIdentifier).nonEmpty)
   }

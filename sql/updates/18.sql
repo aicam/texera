@@ -25,6 +25,6 @@ BEGIN;
 
 -- 1. Add new column cover_image to dataset table.
 ALTER TABLE dataset
-    ADD COLUMN cover_image varchar(246);
+    ADD COLUMN cover_image varchar(255);
 
 COMMIT;

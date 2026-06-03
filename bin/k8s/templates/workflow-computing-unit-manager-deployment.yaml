@@ -77,10 +77,20 @@ spec:
                   name: {{ .Release.Name }}-postgresql
                   key: postgres-password
             # FileService Access
+            # Namespace-qualify the in-cluster Service host (.{{ .Release.Namespace }}): these
+            # endpoints are forwarded verbatim into CU pods, which run in a separate namespace
+            # (workflowComputingUnitPool.namespace), so a bare short-name would not resolve there.
+            # Mirrors the LakeFS endpoint below (#5011).
             - name: FILE_SERVICE_GET_PRESIGNED_URL_ENDPOINT
-              value: http://{{ .Values.fileService.name }}-svc:9092/api/dataset/presign-download
+              value: http://{{ .Values.fileService.name }}-svc.{{ .Release.Namespace }}:9092/api/dataset/presign-download
             - name: FILE_SERVICE_UPLOAD_ONE_FILE_TO_DATASET_ENDPOINT
-              value: http://{{ .Values.fileService.name }}-svc:9092/api/dataset/did/upload
+              value: http://{{ .Values.fileService.name }}-svc.{{ .Release.Namespace }}:9092/api/dataset/did/upload
+            - name: FILE_SERVICE_RESOLVE_PATH_ENDPOINT
+              value: http://{{ .Values.fileService.name }}-svc.{{ .Release.Namespace }}:9092/api/dataset/resolve
+            # Dashboard Service: a provisioned computing unit holds no Postgres credentials
+            # (issue #5011) and routes execution-metadata operations here over HTTP.
+            - name: DASHBOARD_SERVICE_EXECUTION_METADATA_ENDPOINT
+              value: http://{{ .Values.webserver.name }}-svc.{{ .Release.Namespace }}:{{ .Values.webserver.service.port }}/api/internal/execution-metadata
             # S3 Access (for R UDF large binary support)
             - name: STORAGE_S3_ENDPOINT
               value: {{ .Values.storage.s3.endpoint | quote }}

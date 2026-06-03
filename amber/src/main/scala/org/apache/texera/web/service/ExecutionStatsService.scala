@@ -21,6 +21,7 @@ package org.apache.texera.web.service
 
 import com.google.protobuf.timestamp.Timestamp
 import com.typesafe.scalalogging.LazyLogging
+import org.apache.texera.amber.config.ApplicationConfig
 import org.apache.texera.amber.core.storage.model.BufferedItemWriter
 import org.apache.texera.amber.core.storage.result.ResultSchema
 import org.apache.texera.amber.core.storage.{DocumentFactory, VFSURIFactory}
@@ -95,6 +96,14 @@ class ExecutionStatsService(
 
   private var lastPersistedMetrics: Map[String, OperatorMetrics] =
     Map.empty[String, OperatorMetrics]
+
+  // Heartbeat state: while an execution is non-terminal, periodically re-assert its status so the
+  // dashboard's last_update_time stays fresh and lazy on-read reconciliation never mistakes a live
+  // run for a dead computing unit. Piggybacks the runtime-statistics persistence tick (no new timer)
+  // and is throttled to executionStatusHeartbeatIntervalSeconds.
+  private val heartbeatIntervalMs: Long =
+    ApplicationConfig.executionStatusHeartbeatIntervalSeconds * 1000L
+  @volatile private var lastHeartbeatMs: Long = 0L
 
   registerCallbacks()
 
@@ -191,6 +200,9 @@ class ExecutionStatsService(
           stateStore.statsStore.updateState { statsStore =>
             statsStore.withOperatorInfo(evt.operatorMetrics)
           }
+          // This is the most frequent liveness signal (the UI status-update tick); use it to drive
+          // the throttled heartbeat so a live run stays fresh well within the staleness window.
+          maybeHeartbeat()
         })
     )
 
@@ -202,7 +214,34 @@ class ExecutionStatsService(
             storeRuntimeStatistics(computeStatsDiff(evt.operatorMetrics))
             lastPersistedMetrics = evt.operatorMetrics
           })
+          maybeHeartbeat()
         })
+    )
+  }
+
+  /**
+    * Re-assert the execution's current status (throttled) to keep the dashboard's last_update_time
+    * fresh while the run is alive. Only beats for non-terminal states — a heartbeat exists solely to
+    * prove the computing unit is still running this execution; the server-side conditional UPDATE
+    * additionally rejects any write to an already-terminal row, so a late beat can never regress one.
+    *
+    * Driven by the controller's statistics ticks (UI ~500ms and persistence ~2s), so a healthy run
+    * heartbeats far inside the staleness window. The remaining gap is a controller actor wedged for
+    * longer than the window (both ticks share that one timer source): such a run is effectively hung,
+    * and lazy on-read reconciliation will unlock its workflow — acceptable. A fully independent
+    * heartbeat timer would be the upgrade if that case ever needs to stay locked.
+    */
+  private def maybeHeartbeat(): Unit = {
+    val now = System.currentTimeMillis()
+    if (now - lastHeartbeatMs < heartbeatIntervalMs) return
+    val statusCode = maptoStatusCode(stateStore.metadataStore.getState.state)
+    if (statusCode < 0 || statusCode >= 3) return // unmapped or terminal: nothing to heartbeat
+    lastHeartbeatMs = now
+    metricsPersistThread.execute(() =>
+      ExecutionsMetadataPersistService.updateExecutionStatus(
+        workflowContext.executionId,
+        statusCode.toShort
+      )
     )
   }
 

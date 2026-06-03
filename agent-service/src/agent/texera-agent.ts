@@ -18,16 +18,22 @@
  */
 
 import { generateText, type ModelMessage, type LanguageModel, stepCountIs } from "ai";
-import { Subscription } from "rxjs";
-import { debounceTime } from "rxjs/operators";
 import { WorkflowState } from "./workflow-state";
 import { WorkflowSystemMetadata } from "./util/workflow-system-metadata";
 import { WorkflowResultState } from "./workflow-result-state";
 import { formatOperatorResult } from "./tools/result-formatting";
-import type { AgentSettings, ReActStep, TokenUsage, UserInfo } from "../types/agent";
+import type {
+  AgentPersistedConfig,
+  AgentSettings,
+  AgentSettingsApi,
+  AgentTaskContext,
+  ReActStep,
+  TokenUsage,
+} from "../types/agent";
 import {
   AgentState as AgentStateEnum,
   DEFAULT_AGENT_SETTINGS,
+  DEFAULT_AGENT_NAME,
   OperatorResultSerializationMode,
   INITIAL_STEP_ID,
 } from "../types/agent";
@@ -42,17 +48,33 @@ import {
   type ToolContext,
 } from "./tools/workflow-crud-tools";
 import {
+  createGetOperatorDefinitionTool,
+  createListOperatorTypesTool,
+  TOOL_NAME_GET_OPERATOR_DEFINITION,
+  TOOL_NAME_LIST_OPERATOR_TYPES,
+} from "./tools/operator-metadata-tools";
+import {
   createExecuteOperatorTool,
   executeOperatorAndFormat,
   TOOL_NAME_EXECUTE_OPERATOR,
   type ExecutionConfig,
 } from "./tools/workflow-execution-tools";
+import {
+  createListDatasetFilesTool,
+  createListDatasetsTool,
+  createListDatasetVersionsTool,
+  TOOL_NAME_LIST_DATASET_FILES,
+  TOOL_NAME_LIST_DATASET_VERSIONS,
+  TOOL_NAME_LIST_DATASETS,
+  type DatasetToolConfig,
+} from "./tools/dataset-tools";
+import { RemoteMcpToolRegistry } from "./mcp/mcp-client-manager";
+import { createRemoteMcpTools } from "./tools/mcp-remote-tools";
 import { assembleContext } from "./util/context-utils";
 import { compileWorkflowAsync, type WorkflowCompilationResponse } from "../api/compile-api";
+import { persistWorkflow, retrieveWorkflow } from "../api/workflow-api";
 import { createLogger } from "../logger";
 import type { Logger } from "pino";
-
-const PERSIST_DEBOUNCE_MS = 500;
 
 export interface TexeraAgentConfig {
   model: LanguageModel;
@@ -60,6 +82,9 @@ export interface TexeraAgentConfig {
   agentId: string;
   agentName?: string;
   systemPrompt?: string;
+  createdAt?: Date;
+  persistedConfig?: AgentPersistedConfig;
+  reactSteps?: ReActStep[];
 }
 
 export interface AgentMessageResult {
@@ -83,13 +108,14 @@ type ReActStepCallback = (step: ReActStep) => void;
  */
 export class TexeraAgent {
   readonly agentId: string;
-  readonly agentName: string;
-  readonly modelType: string;
+  agentName: string;
+  modelType: string;
   readonly createdAt: Date;
 
   private state: AgentStateEnum = AgentStateEnum.AVAILABLE;
   private workflowState: WorkflowState;
   private metadataStore: WorkflowSystemMetadata;
+  private mcpToolRegistry: RemoteMcpToolRegistry;
   private head: string = INITIAL_STEP_ID;
   private stepsById: Map<string, ReActStep> = new Map();
   private stepCounter = 0;
@@ -104,14 +130,7 @@ export class TexeraAgent {
   private reActStepsByMessageId: Map<string, ReActStep[]> = new Map();
 
   private currentMessageId: string | undefined = undefined;
-
-  private delegateConfig?: {
-    userToken: string;
-    userInfo?: UserInfo;
-    workflowId: number;
-    workflowName?: string;
-    computingUnitId?: number;
-  };
+  private currentTaskContext?: AgentTaskContext;
 
   private stepCallback: ReActStepCallback | null = null;
 
@@ -121,21 +140,20 @@ export class TexeraAgent {
 
   private abortController: AbortController | null = null;
 
-  private workflowChangeSubscription: Subscription | null = null;
-
   private log: Logger;
 
   constructor(config: TexeraAgentConfig) {
     this.agentId = config.agentId;
-    this.agentName = config.agentName || `Agent-${config.agentId}`;
+    this.agentName = config.agentName || DEFAULT_AGENT_NAME;
     this.modelType = config.modelType;
-    this.createdAt = new Date();
+    this.createdAt = config.createdAt ?? new Date();
     this.model = config.model;
-    this.systemPrompt = config.systemPrompt || "";
+    this.systemPrompt = config.persistedConfig?.systemPrompt || config.systemPrompt || "";
     this.log = createLogger("TexeraAgent", { agentId: this.agentId });
 
     this.workflowState = new WorkflowState();
     this.metadataStore = WorkflowSystemMetadata.getInstance();
+    this.mcpToolRegistry = RemoteMcpToolRegistry.getInstance();
     this.workflowResultState = new WorkflowResultState(() => this.getAncestorPath());
 
     const initialStep: ReActStep = {
@@ -155,8 +173,14 @@ export class TexeraAgent {
       ...DEFAULT_AGENT_SETTINGS,
       systemPrompt: this.systemPrompt,
     };
+    if (config.persistedConfig?.settings) {
+      this.applySettingsApi(config.persistedConfig.settings);
+    }
 
     this.tools = this.createTools();
+    if (config.reactSteps && config.reactSteps.length > 0) {
+      this.restoreReActSteps(config.reactSteps);
+    }
   }
 
   async initialize(): Promise<void> {
@@ -164,30 +188,120 @@ export class TexeraAgent {
       if (!this.metadataStore.isInitialized()) {
         await this.metadataStore.initializeFromBackend();
       }
+      await this.mcpToolRegistry.initialize();
 
       this.rebuildSystemPrompt();
 
       this.tools = this.createTools();
-      this.log.info({ operatorCount: this.metadataStore.getOperatorCount() }, "agent initialized");
+      this.log.info(
+        {
+          operatorCount: this.metadataStore.getOperatorCount(),
+          remoteMcpToolCount: this.mcpToolRegistry.getTools().length,
+        },
+        "agent initialized"
+      );
     } catch (error) {
       this.log.error({ err: error }, "failed to initialize metadata");
     }
   }
 
   private rebuildSystemPrompt(): void {
-    this.systemPrompt = buildSystemPrompt(this.metadataStore, this.settings.allowedOperatorTypes);
+    this.systemPrompt = buildSystemPrompt(this.metadataStore);
     this.settings.systemPrompt = this.systemPrompt;
   }
 
+  private applySettingsApi(settings: AgentSettingsApi): void {
+    if (settings.maxOperatorResultCharLimit !== undefined) {
+      this.settings.maxOperatorResultCharLimit = settings.maxOperatorResultCharLimit;
+    }
+    if (settings.maxOperatorResultCellCharLimit !== undefined) {
+      this.settings.maxOperatorResultCellCharLimit = settings.maxOperatorResultCellCharLimit;
+    }
+    if (settings.operatorResultSerializationMode !== undefined) {
+      this.settings.operatorResultSerializationMode =
+        settings.operatorResultSerializationMode as OperatorResultSerializationMode;
+    }
+    if (settings.toolTimeoutSeconds !== undefined) {
+      this.settings.toolTimeoutMs = settings.toolTimeoutSeconds * 1000;
+    }
+    if (settings.executionTimeoutMinutes !== undefined) {
+      this.settings.executionTimeoutMs = settings.executionTimeoutMinutes * 60000;
+    }
+    if (settings.disabledTools !== undefined) {
+      this.settings.disabledTools = new Set(settings.disabledTools);
+    }
+    if (settings.maxSteps !== undefined) {
+      this.settings.maxSteps = settings.maxSteps;
+    }
+  }
+
+  private restoreReActSteps(steps: ReActStep[]): void {
+    this.reActStepsByMessageId.clear();
+    this.stepsById.clear();
+
+    const initialStep: ReActStep = {
+      id: INITIAL_STEP_ID,
+      messageId: "initial",
+      stepId: -1,
+      timestamp: Date.now(),
+      role: "user",
+      content: "",
+      isBegin: true,
+      isEnd: true,
+      parentId: undefined,
+    };
+    this.stepsById.set(INITIAL_STEP_ID, initialStep);
+
+    for (const step of steps) {
+      this.addRestoredStep(step);
+    }
+
+    this.stepCounter = steps.length;
+    this.messageCounter = new Set(steps.map(step => step.messageId)).size;
+    const lastStep = steps[steps.length - 1];
+    if (lastStep) {
+      this.head = lastStep.id;
+      if (lastStep.afterWorkflowContent) {
+        this.workflowState.setWorkflowContent(lastStep.afterWorkflowContent);
+      }
+    }
+  }
+
+  private addRestoredStep(step: ReActStep): void {
+    let steps = this.reActStepsByMessageId.get(step.messageId);
+    if (!steps) {
+      steps = [];
+      this.reActStepsByMessageId.set(step.messageId, steps);
+    }
+    steps.push(step);
+    this.stepsById.set(step.id, step);
+  }
+
   private buildExecutionConfig(): ExecutionConfig | undefined {
-    if (!this.delegateConfig) return undefined;
+    // Executing requires both a workflow and a connected computing unit. Without a computing unit
+    // there is nothing to run on, so no execution config is produced (the execute tool and the
+    // post-step auto-execution are skipped, and the model guides the user to connect one instead).
+    if (
+      !this.currentTaskContext ||
+      this.currentTaskContext.workflowId === undefined ||
+      this.currentTaskContext.computingUnitId === undefined
+    ) {
+      return undefined;
+    }
     return {
-      userToken: this.delegateConfig.userToken,
-      workflowId: this.delegateConfig.workflowId,
-      computingUnitId: this.delegateConfig.computingUnitId,
+      userToken: this.currentTaskContext.userToken,
+      workflowId: this.currentTaskContext.workflowId,
+      computingUnitId: this.currentTaskContext.computingUnitId,
       maxOperatorResultCharLimit: this.settings.maxOperatorResultCharLimit,
       maxOperatorResultCellCharLimit: this.settings.maxOperatorResultCellCharLimit,
       executionTimeoutMs: this.settings.executionTimeoutMs,
+    };
+  }
+
+  private buildDatasetToolConfig(): DatasetToolConfig | undefined {
+    if (!this.currentTaskContext) return undefined;
+    return {
+      userToken: this.currentTaskContext.userToken,
     };
   }
 
@@ -201,18 +315,19 @@ export class TexeraAgent {
       }
     }
 
-    const getExecutionConfig = this.delegateConfig ? () => this.buildExecutionConfig()! : undefined;
+    const getExecutionConfig =
+      this.currentTaskContext?.workflowId !== undefined && this.currentTaskContext?.computingUnitId !== undefined
+        ? () => this.buildExecutionConfig()!
+        : undefined;
+    const getDatasetToolConfig = this.currentTaskContext ? () => this.buildDatasetToolConfig()! : undefined;
 
     const context: ToolContext = {
       metadataStore: this.metadataStore,
-      settings: {
-        maxOperatorResultCharLimit: this.settings.maxOperatorResultCharLimit,
-        toolTimeoutMs: this.settings.toolTimeoutMs,
-        executionTimeoutMs: this.settings.executionTimeoutMs,
-      },
     };
 
     const tools: Record<string, any> = {
+      [TOOL_NAME_LIST_OPERATOR_TYPES]: createListOperatorTypesTool(this.metadataStore),
+      [TOOL_NAME_GET_OPERATOR_DEFINITION]: createGetOperatorDefinitionTool(this.metadataStore),
       [TOOL_NAME_DELETE_OPERATOR]: createDeleteOperatorTool(this.workflowState, context),
       [TOOL_NAME_ADD_OPERATOR]: createAddOperatorTool(this.workflowState, operatorSchemas, context),
       [TOOL_NAME_MODIFY_OPERATOR]: createModifyOperatorTool(this.workflowState, context),
@@ -228,6 +343,14 @@ export class TexeraAgent {
       );
     }
 
+    if (getDatasetToolConfig) {
+      tools[TOOL_NAME_LIST_DATASETS] = createListDatasetsTool(getDatasetToolConfig);
+      tools[TOOL_NAME_LIST_DATASET_VERSIONS] = createListDatasetVersionsTool(getDatasetToolConfig);
+      tools[TOOL_NAME_LIST_DATASET_FILES] = createListDatasetFilesTool(getDatasetToolConfig);
+    }
+
+    Object.assign(tools, createRemoteMcpTools(this.mcpToolRegistry));
+
     return tools;
   }
 
@@ -241,6 +364,11 @@ export class TexeraAgent {
 
   getMetadataStore(): WorkflowSystemMetadata {
     return this.metadataStore;
+  }
+
+  setTaskContext(taskContext?: AgentTaskContext): void {
+    this.currentTaskContext = taskContext;
+    this.tools = this.createTools();
   }
 
   getHead(): string {
@@ -356,6 +484,38 @@ export class TexeraAgent {
     return { ...this.settings };
   }
 
+  getSettingsApi(): AgentSettingsApi {
+    return {
+      maxOperatorResultCharLimit: this.settings.maxOperatorResultCharLimit,
+      maxOperatorResultCellCharLimit: this.settings.maxOperatorResultCellCharLimit,
+      operatorResultSerializationMode: this.settings.operatorResultSerializationMode,
+      toolTimeoutSeconds: Math.round(this.settings.toolTimeoutMs / 1000),
+      executionTimeoutMinutes: Math.round(this.settings.executionTimeoutMs / 60000),
+      disabledTools: Array.from(this.settings.disabledTools),
+      maxSteps: this.settings.maxSteps,
+    };
+  }
+
+  getPersistedConfig(): AgentPersistedConfig {
+    return {
+      systemPrompt: this.systemPrompt,
+      tools: this.getSystemInfo().tools,
+      settings: this.getSettingsApi(),
+    };
+  }
+
+  updateAgentMetadata(updates: { name?: string; modelType?: string; model?: LanguageModel }): void {
+    if (updates.name !== undefined) {
+      this.agentName = updates.name;
+    }
+    if (updates.modelType !== undefined) {
+      this.modelType = updates.modelType;
+    }
+    if (updates.model !== undefined) {
+      this.model = updates.model;
+    }
+  }
+
   updateSettings(updates: {
     maxOperatorResultCharLimit?: number;
     maxOperatorResultCellCharLimit?: number;
@@ -364,10 +524,7 @@ export class TexeraAgent {
     executionTimeoutMs?: number;
     disabledTools?: Set<string>;
     maxSteps?: number;
-    allowedOperatorTypes?: string[];
   }): void {
-    let promptNeedsRebuild = false;
-
     if (updates.maxOperatorResultCharLimit !== undefined) {
       this.settings.maxOperatorResultCharLimit = updates.maxOperatorResultCharLimit;
     }
@@ -389,14 +546,6 @@ export class TexeraAgent {
     if (updates.maxSteps !== undefined) {
       this.settings.maxSteps = updates.maxSteps;
     }
-    if (updates.allowedOperatorTypes !== undefined) {
-      this.settings.allowedOperatorTypes = updates.allowedOperatorTypes;
-      promptNeedsRebuild = true;
-    }
-
-    if (promptNeedsRebuild) {
-      this.rebuildSystemPrompt();
-    }
 
     this.tools = this.createTools();
     this.log.info(
@@ -408,96 +557,60 @@ export class TexeraAgent {
     );
   }
 
-  async refreshWorkflowFromBackend(): Promise<void> {
-    // HEAD at a real step means the workflow is determined by that step's snapshot;
-    // only reload from backend when HEAD is the initial sentinel.
-    if (this.head !== INITIAL_STEP_ID) {
+  private async loadWorkflowForTask(taskContext: AgentTaskContext): Promise<string> {
+    if (taskContext.workflowContent !== undefined) {
+      this.workflowState.setWorkflowContent(taskContext.workflowContent);
+      this.log.debug(
+        { workflowId: taskContext.workflowId, operators: taskContext.workflowContent.operators.length },
+        "loaded live workflow content for agent task"
+      );
+      return taskContext.workflowName || "Agent Workflow";
+    }
+    if (taskContext.workflowId === undefined) {
+      return taskContext.workflowName || "Agent Workflow";
+    }
+    const workflow = await retrieveWorkflow(taskContext.userToken, taskContext.workflowId);
+    this.workflowState.setWorkflowContent(workflow.content);
+    this.log.debug({ workflowId: taskContext.workflowId }, "loaded workflow for agent task");
+    return workflow.name || taskContext.workflowName || "Agent Workflow";
+  }
+
+  private async persistWorkflowForTask(taskContext: AgentTaskContext, workflowName: string): Promise<void> {
+    if (taskContext.workflowId === undefined) {
       return;
     }
-
-    if (!this.delegateConfig?.workflowId || !this.delegateConfig?.userToken) {
-      return;
-    }
-
     try {
-      const { retrieveWorkflow } = await import("../api/workflow-api");
-      const workflow = await retrieveWorkflow(this.delegateConfig.userToken, this.delegateConfig.workflowId);
-      this.workflowState.setWorkflowContent(workflow.content);
-      this.log.debug({ workflowId: this.delegateConfig.workflowId }, "refreshed workflow from backend");
+      const workflowContent = this.workflowState.getWorkflowContent();
+      await persistWorkflow(taskContext.userToken, taskContext.workflowId, workflowName, workflowContent);
+      this.log.debug({ workflowId: taskContext.workflowId }, "persisted workflow after agent task");
     } catch (error) {
-      this.log.warn({ err: error }, "failed to refresh workflow from backend");
+      this.log.error({ workflowId: taskContext.workflowId, err: error }, "failed to persist workflow after agent task");
     }
   }
 
-  setDelegateConfig(config: {
-    userToken: string;
-    userInfo?: UserInfo;
-    workflowId: number;
-    workflowName?: string;
-    computingUnitId?: number;
-  }): void {
-    this.delegateConfig = config;
-
-    this.tools = this.createTools();
-
-    this.setupWorkflowChangeHandlers();
-  }
-
-  getDelegateConfig():
-    | { userToken: string; userInfo?: UserInfo; workflowId: number; workflowName?: string; computingUnitId?: number }
-    | undefined {
-    return this.delegateConfig;
-  }
-
-  private setupWorkflowChangeHandlers(): void {
-    if (this.workflowChangeSubscription) {
-      this.workflowChangeSubscription.unsubscribe();
-    }
-
-    const subscription = new Subscription();
-    const workflowChanged$ = this.workflowState.getWorkflowChangedStream();
-
-    if (this.delegateConfig?.workflowId && this.delegateConfig.userToken) {
-      const persistSubscription = workflowChanged$.pipe(debounceTime(PERSIST_DEBOUNCE_MS)).subscribe(async () => {
-        if (!this.delegateConfig?.workflowId || !this.delegateConfig.userToken) {
-          return;
-        }
-
-        try {
-          const { persistWorkflow } = await import("../api/workflow-api");
-          const workflowContent = this.workflowState.getWorkflowContent();
-          await persistWorkflow(
-            this.delegateConfig.userToken,
-            this.delegateConfig.workflowId,
-            this.delegateConfig.workflowName || "Agent Workflow",
-            workflowContent
-          );
-          this.log.debug({ workflowId: this.delegateConfig.workflowId }, "auto-persisted workflow");
-        } catch (error) {
-          this.log.error({ err: error }, "failed to auto-persist workflow");
-        }
-      });
-
-      subscription.add(persistSubscription);
-    }
-
-    this.workflowChangeSubscription = subscription;
-    this.workflowState.addSubscription(subscription);
-  }
-
-  async sendMessage(userMessage: string, messageSource?: "chat" | "feedback"): Promise<AgentMessageResult> {
+  async sendMessage(
+    userMessage: string,
+    taskContext: AgentTaskContext,
+    messageSource?: "chat" | "feedback"
+  ): Promise<AgentMessageResult> {
     const messageId = `msg-${this.agentId}-${++this.messageCounter}-${Date.now()}`;
     let stepIndex = 0;
-
-    await this.refreshWorkflowFromBackend();
+    let workflowLoaded = false;
+    let workflowName = taskContext.workflowName || "Agent Workflow";
 
     this.abortController = new AbortController();
 
     this.state = AgentStateEnum.GENERATING;
 
     this.currentMessageId = messageId;
+    this.setTaskContext(taskContext);
 
     try {
+      if (taskContext.workflowId !== undefined || taskContext.workflowContent !== undefined) {
+        workflowName = await this.loadWorkflowForTask(taskContext);
+        workflowLoaded = true;
+      }
+
       let beforeStepContent = this.workflowState.getWorkflowContent();
 
       const estimatedInputTokens = Math.ceil(userMessage.length / 4);
@@ -526,6 +639,7 @@ export class TexeraAgent {
 
       let isFirstStep = true;
       let lastPreparedMessages: ModelMessage[] | undefined;
+      const includeWorkflowContext = taskContext.workflowId !== undefined || taskContext.workflowContent !== undefined;
 
       // Pass only the current user turn; prepareStep rebuilds full context each step
       // (historical interactions + DAG + this message).
@@ -539,23 +653,23 @@ export class TexeraAgent {
         stopWhen: stepCountIs(this.settings.maxSteps),
         prepareStep: async ({ stepNumber, messages: currentMessages }) => {
           let compilationResult: WorkflowCompilationResponse | null = null;
-          if (this.workflowState.getAllOperators().length > 0) {
+          if (includeWorkflowContext && this.workflowState.getAllOperators().length > 0) {
             try {
               const logicalPlan = this.workflowState.toLogicalPlan();
-              compilationResult = await compileWorkflowAsync(logicalPlan);
+              compilationResult = await compileWorkflowAsync(logicalPlan, taskContext.userToken);
             } catch (e: any) {
               this.log.warn({ err: e?.message || e }, "compilation failed; proceeding without schemas");
             }
           }
 
           const visibleSteps = this.getVisibleReActSteps();
-          const processed = assembleContext(
-            visibleSteps,
-            this.workflowState,
-            this.getFormattedResultsForDAG(),
-            false,
-            compilationResult
-          );
+          const processed = assembleContext(visibleSteps, this.workflowState, this.getFormattedResultsForDAG(), {
+            useRedact: false,
+            compilationResult,
+            includeWorkflowContext,
+            maxResolvedCharLimit: this.settings.maxOperatorResultCharLimit,
+            computingUnitConnected: taskContext.computingUnitId !== undefined,
+          });
           lastPreparedMessages = processed;
           return { messages: processed };
         },
@@ -718,8 +832,16 @@ export class TexeraAgent {
         error: error.message || String(error),
       };
     } finally {
+      // The frontend auto-persists the workflow whenever the canvas changes, and the agent's
+      // edits are replayed onto that canvas, so the frontend is the single persistence writer
+      // while a chat client is connected. Persist from here only when running headless (no
+      // connected websocket) to avoid two writers racing on the same workflow.
+      if (workflowLoaded && this.websockets.size === 0) {
+        await this.persistWorkflowForTask(taskContext, workflowName);
+      }
       this.abortController = null;
       this.currentMessageId = undefined;
+      this.setTaskContext(undefined);
       this.state = AgentStateEnum.AVAILABLE;
     }
   }
@@ -728,7 +850,15 @@ export class TexeraAgent {
     const result = new Map<string, string>();
     const visible = this.workflowResultState.getAllVisible();
     for (const [operatorId, entry] of visible) {
-      result.set(operatorId, formatOperatorResult(operatorId, entry.operatorInfo, this.workflowState));
+      result.set(
+        operatorId,
+        formatOperatorResult(
+          operatorId,
+          entry.operatorInfo,
+          this.workflowState,
+          this.settings.maxOperatorResultCharLimit
+        )
+      );
     }
     return result;
   }
@@ -824,11 +954,6 @@ export class TexeraAgent {
   }
 
   destroy(): void {
-    if (this.workflowChangeSubscription) {
-      this.workflowChangeSubscription.unsubscribe();
-      this.workflowChangeSubscription = null;
-    }
-
     this.workflowState.destroy();
 
     this.websockets.clear();
@@ -836,5 +961,6 @@ export class TexeraAgent {
     this.reActStepsByMessageId.clear();
     this.stepsById.clear();
     this.currentMessageId = undefined;
+    this.currentTaskContext = undefined;
   }
 }

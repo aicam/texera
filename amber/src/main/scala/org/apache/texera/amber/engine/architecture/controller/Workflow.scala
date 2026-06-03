@@ -20,10 +20,13 @@
 package org.apache.texera.amber.engine.architecture.controller
 
 import org.apache.texera.amber.core.workflow.{PhysicalPlan, WorkflowContext}
-import org.apache.texera.workflow.LogicalPlan
+import org.apache.texera.amber.compiler.model.LogicalPlan
 
 case class Workflow(
     context: WorkflowContext,
-    logicalPlan: LogicalPlan,
+    // The logical plan is only retained for in-JVM compilation paths (amber's WorkflowCompiler,
+    // e2e TestUtils). At runtime the client ships a pre-compiled physical plan, so the Computing
+    // Unit builds a Workflow with `logicalPlan = None`; nothing on the execution path reads it.
+    logicalPlan: Option[LogicalPlan] = None,
     physicalPlan: PhysicalPlan
 )

@@ -62,7 +62,9 @@ case class OperatorPortCacheRecord(
   * @param sqlServer SqlServer instance for database access
   */
 class OperatorPortCacheDao(sqlServer: SqlServer) {
-  private val context: DSLContext = sqlServer.createDSLContext()
+  // Lazy: constructing the DAO must not require a live Postgres connection (issue #5011 — a
+  // Postgres-free computing unit may construct, but never exercise, a resource that bundles it).
+  private lazy val context: DSLContext = sqlServer.createDSLContext()
 
   /**
     * Retrieve a cache entry by primary key (workflow_id, global_port_id, subdag_hash).

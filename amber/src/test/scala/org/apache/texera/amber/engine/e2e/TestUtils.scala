@@ -59,9 +59,10 @@ import org.apache.texera.dao.jooq.generated.tables.pojos.{
   WorkflowVersion,
   Workflow => WorkflowPojo
 }
-import org.apache.texera.web.model.websocket.request.LogicalPlanPojo
+import org.apache.texera.amber.compiler.model.LogicalPlanPojo
 import org.apache.texera.web.resource.dashboard.user.workflow.WorkflowExecutionsResource.getResultUriByLogicalPortId
-import org.apache.texera.workflow.{LogicalLink, WorkflowCompiler}
+import org.apache.texera.amber.compiler.model.LogicalLink
+import org.apache.texera.workflow.WorkflowCompiler
 
 object TestUtils {
 
@@ -188,7 +189,7 @@ object TestUtils {
     var result: Map[OperatorIdentity, List[Tuple]] = null
     client.registerCallback[ExecutionStateUpdate](evt => {
       if (evt.state == COMPLETED) {
-        result = workflow.logicalPlan.getTerminalOperatorIds
+        result = workflow.logicalPlan.get.getTerminalOperatorIds
           .filter(terminalOpId => {
             val uri = getResultUriByLogicalPortId(
               workflow.context.executionId,

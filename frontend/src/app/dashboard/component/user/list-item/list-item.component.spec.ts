@@ -31,11 +31,11 @@ import { commonTestProviders } from "../../../../common/testing/test-utils";
 import type { Mocked } from "vitest";
 import { DashboardEntry } from "src/app/dashboard/type/dashboard-entry";
 import {
-  HUB_DATASET_RESULT_DETAIL,
-  HUB_WORKFLOW_RESULT_DETAIL,
-  USER_DATASET,
-  USER_PROJECT,
-  USER_WORKSPACE,
+  DASHBOARD_HUB_DATASET_RESULT_DETAIL,
+  DASHBOARD_HUB_WORKFLOW_RESULT_DETAIL,
+  DASHBOARD_USER_DATASET,
+  DASHBOARD_USER_PROJECT,
+  DASHBOARD_USER_WORKSPACE,
 } from "../../../../app-routing.constant";
 
 describe("ListItemComponent", () => {
@@ -141,7 +141,7 @@ describe("ListItemComponent", () => {
         ...baseStats,
       } as unknown as DashboardEntry;
       component.initializeEntry();
-      expect(component.entryLink).toEqual([USER_WORKSPACE, "100"]);
+      expect(component.entryLink).toEqual([DASHBOARD_USER_WORKSPACE, "100"]);
     });
 
     it("routes non-owned workflows to the hub workflow detail page", () => {
@@ -154,13 +154,13 @@ describe("ListItemComponent", () => {
         ...baseStats,
       } as unknown as DashboardEntry;
       component.initializeEntry();
-      expect(component.entryLink).toEqual([HUB_WORKFLOW_RESULT_DETAIL, "101"]);
+      expect(component.entryLink).toEqual([DASHBOARD_HUB_WORKFLOW_RESULT_DETAIL, "101"]);
     });
 
     it("routes projects to the user project page", () => {
       component.entry = { id: 200, type: "project", ...baseStats } as unknown as DashboardEntry;
       component.initializeEntry();
-      expect(component.entryLink).toEqual([USER_PROJECT, "200"]);
+      expect(component.entryLink).toEqual([DASHBOARD_USER_PROJECT, "200"]);
     });
 
     it("routes owned datasets to the user dataset page", () => {
@@ -173,7 +173,7 @@ describe("ListItemComponent", () => {
         ...baseStats,
       } as unknown as DashboardEntry;
       component.initializeEntry();
-      expect(component.entryLink).toEqual([USER_DATASET, "300"]);
+      expect(component.entryLink).toEqual([DASHBOARD_USER_DATASET, "300"]);
     });
 
     it("routes non-owned datasets to the hub dataset detail page", () => {
@@ -186,7 +186,7 @@ describe("ListItemComponent", () => {
         ...baseStats,
       } as unknown as DashboardEntry;
       component.initializeEntry();
-      expect(component.entryLink).toEqual([HUB_DATASET_RESULT_DETAIL, "301"]);
+      expect(component.entryLink).toEqual([DASHBOARD_HUB_DATASET_RESULT_DETAIL, "301"]);
     });
   });
 });

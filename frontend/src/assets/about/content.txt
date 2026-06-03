@@ -19,4 +19,3 @@ Single-cell RNA sequencing analysis: Follow a complete, guided example of taking
 
 CloudBioMapper for sequence alignment: Run sequence-alignment tasks faster by launching on-demand clusters on the cloud and aligning in parallel with pay-as-you-go scaling.
 [picture cloudbiomapper.png]
-

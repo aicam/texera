@@ -21,7 +21,7 @@ package org.apache.texera.amber.engine.architecture.pythonworker
 
 import org.apache.pekko.actor.Props
 import com.twitter.util.Promise
-import org.apache.texera.amber.config.{PythonUtils, StorageConfig, UdfConfig}
+import org.apache.texera.amber.config.{EnvironmentalVariable, PythonUtils, StorageConfig, UdfConfig}
 import org.apache.texera.amber.core.virtualidentity.ChannelIdentity
 import org.apache.texera.amber.engine.architecture.common.WorkflowActor
 import org.apache.texera.amber.engine.architecture.common.WorkflowActor.NetworkAck
@@ -187,6 +187,13 @@ class PythonWorkflowWorker(
     // Set the Iceberg related arguments based on the catalog type.
     val isPostgres = StorageConfig.icebergCatalogType == "postgres"
     val isRest = StorageConfig.icebergCatalogType == "rest"
+    // Forward the issuing user's per-execution token (when present) as USER_JWT_TOKEN in the Python
+    // worker's environment, so dataset reads from user UDFs authenticate as that user rather than a
+    // static token (issue #5011). When absent, the process inherits the parent env as before.
+    val extraEnv: Seq[(String, String)] =
+      workerConfig.userJwtToken
+        .map(token => EnvironmentalVariable.ENV_USER_JWT_TOKEN -> token)
+        .toSeq
     pythonServerProcess = Process(
       Seq(
         pythonBin,
@@ -210,7 +217,9 @@ class PythonWorkflowWorker(
         StorageConfig.s3Region,
         StorageConfig.s3Username,
         StorageConfig.s3Password
-      )
+      ),
+      None,
+      extraEnv: _*
     ).run(BasicIO.standard(false))
   }
 

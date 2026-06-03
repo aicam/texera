@@ -34,6 +34,7 @@ export interface TokenUsage {
 }
 
 export const INITIAL_STEP_ID = "step-initial";
+export const DEFAULT_AGENT_NAME = "DKNetAgent";
 
 export interface ReActStep {
   id: string;
@@ -75,7 +76,6 @@ export interface AgentSettings {
   toolTimeoutMs: number;
   executionTimeoutMs: number;
   maxSteps: number;
-  allowedOperatorTypes: string[];
 }
 
 export const DEFAULT_AGENT_SETTINGS: Omit<AgentSettings, "systemPrompt"> = {
@@ -86,26 +86,6 @@ export const DEFAULT_AGENT_SETTINGS: Omit<AgentSettings, "systemPrompt"> = {
   toolTimeoutMs: 240000,
   executionTimeoutMs: 240000,
   maxSteps: 100,
-  allowedOperatorTypes: [
-    "CSVFileScan",
-    "Filter",
-    "Projection",
-    "TypeCasting",
-    "Sort",
-    "Limit",
-    "Distinct",
-    "Union",
-    "KeywordSearch",
-    "HashJoin",
-    "Aggregate",
-    "LineChart",
-    "BarChart",
-    "PieChart",
-    "Histogram",
-    "Scatterplot",
-    "WordCloud",
-    "PythonUDFV2",
-  ],
 };
 
 export interface UserInfo {
@@ -115,12 +95,26 @@ export interface UserInfo {
   role: string;
 }
 
-export interface AgentDelegateConfig {
+export interface AgentTaskContext {
   userToken: string;
   userInfo?: UserInfo;
   workflowId?: number;
   workflowName?: string;
+  workflowContent?: WorkflowContent;
   computingUnitId?: number;
+}
+
+export interface AgentToolInfo {
+  name: string;
+  description: string;
+  inputSchema: any;
+  enabled: boolean;
+}
+
+export interface AgentPersistedConfig {
+  systemPrompt: string;
+  tools: AgentToolInfo[];
+  settings: AgentSettingsApi;
 }
 
 export interface AgentSettingsApi {
@@ -131,7 +125,6 @@ export interface AgentSettingsApi {
   executionTimeoutMinutes?: number;
   disabledTools?: string[];
   maxSteps?: number;
-  allowedOperatorTypes?: string[];
 }
 
 export interface AgentInfo {
@@ -140,26 +133,14 @@ export interface AgentInfo {
   modelType: string;
   state: AgentState;
   createdAt: Date;
-  delegate?: AgentDelegateConfig;
-  settings?: AgentSettingsApi;
 }
 
 export interface CreateAgentRequest {
   modelType: string;
   name?: string;
-  userToken?: string;
-  workflowId?: number;
-  computingUnitId?: number;
-  settings?: AgentSettingsApi;
 }
 
-export interface UpdateAgentSettingsRequest {
-  maxOperatorResultCharLimit?: number;
-  maxOperatorResultCellCharLimit?: number;
-  operatorResultSerializationMode?: "tsv";
-  toolTimeoutSeconds?: number;
-  executionTimeoutMinutes?: number;
-  disabledTools?: string[];
-  maxSteps?: number;
-  allowedOperatorTypes?: string[];
+export interface UpdateAgentRequest {
+  name?: string;
+  modelType?: string;
 }

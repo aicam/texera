@@ -27,8 +27,7 @@ import jakarta.ws.rs._
 import jakarta.ws.rs.core.{MediaType, Response}
 import org.apache.texera.amber.config.{EnvironmentalVariable, StorageConfig}
 import org.apache.commons.lang3.StringUtils
-import org.apache.texera.auth.JwtAuth.{TOKEN_EXPIRE_TIME_IN_MINUTES, jwtClaims}
-import org.apache.texera.auth.{JwtAuth, SessionUser}
+import org.apache.texera.auth.SessionUser
 import org.apache.texera.config.KubernetesConfig.{
   cpuLimitOptions,
   gpuLimitOptions,
@@ -102,13 +101,19 @@ object ComputingUnitManagingResource {
     }
   }
 
-  // Environment variables passed to the created computing unit(pod)
+  // Environment variables passed to the created computing unit(pod).
+  //
+  // The computing unit holds NO Postgres credentials and performs NO JWT authentication
+  // (issue #5011): it routes execution-metadata operations to the dashboard service over HTTP and
+  // resolves/presigns datasets through the file service. So it is given those service endpoints
+  // instead of JDBC credentials (STORAGE_JDBC_*) or the JWT signing secret (AUTH_JWT_SECRET), and
+  // it carries no static user token (the issuing user's JWT travels in each execute request).
   private lazy val computingUnitEnvironmentVariables: Map[String, Any] =
     icebergEnvironmentVariables ++ Map(
-      // Variables for saving the metadata of the results, i.e. URIs of results/stats
-      EnvironmentalVariable.ENV_JDBC_URL -> StorageConfig.jdbcUrl,
-      EnvironmentalVariable.ENV_JDBC_USERNAME -> StorageConfig.jdbcUsername,
-      EnvironmentalVariable.ENV_JDBC_PASSWORD -> StorageConfig.jdbcPassword,
+      // Where the CU sends execution-metadata operations (result/stats URIs, status, ...).
+      EnvironmentalVariable.ENV_DASHBOARD_SERVICE_EXECUTION_METADATA_ENDPOINT -> EnvironmentalVariable
+        .get(EnvironmentalVariable.ENV_DASHBOARD_SERVICE_EXECUTION_METADATA_ENDPOINT)
+        .get,
       // Variables for reading files & exporting results
       // LakeFS endpoint is passed to CU to make CU work in dev mode(using localhost & using default LakeFS credentials)
       // LakeFS credentials should NOT be passed to CU
@@ -124,6 +129,10 @@ object ComputingUnitManagingResource {
       EnvironmentalVariable.ENV_FILE_SERVICE_UPLOAD_ONE_FILE_TO_DATASET_ENDPOINT -> EnvironmentalVariable
         .get(EnvironmentalVariable.ENV_FILE_SERVICE_UPLOAD_ONE_FILE_TO_DATASET_ENDPOINT)
         .get,
+      // Dataset path resolution, so the CU can read datasets without Postgres credentials.
+      EnvironmentalVariable.ENV_FILE_SERVICE_RESOLVE_PATH_ENDPOINT -> EnvironmentalVariable
+        .get(EnvironmentalVariable.ENV_FILE_SERVICE_RESOLVE_PATH_ENDPOINT)
+        .get,
       // Variables for amber setting
       // TODO: use AmberConfig for the following items. Currently AmberConfig is only accessible in workflow-executing-service
       EnvironmentalVariable.ENV_SCHEDULE_GENERATOR_ENABLE_COST_BASED_SCHEDULE_GENERATOR -> EnvironmentalVariable
@@ -134,9 +143,6 @@ object ComputingUnitManagingResource {
         .get,
       EnvironmentalVariable.ENV_MAX_WORKFLOW_WEBSOCKET_REQUEST_PAYLOAD_SIZE_KB -> EnvironmentalVariable
         .get(EnvironmentalVariable.ENV_MAX_WORKFLOW_WEBSOCKET_REQUEST_PAYLOAD_SIZE_KB)
-        .get,
-      EnvironmentalVariable.ENV_AUTH_JWT_SECRET -> EnvironmentalVariable
-        .get(EnvironmentalVariable.ENV_AUTH_JWT_SECRET)
         .get
     )
 
@@ -599,7 +605,6 @@ class ComputingUnitManagingResource {
       }
 
       val computingUnit = new WorkflowComputingUnit()
-      val userToken = JwtAuth.jwtToken(jwtClaims(user.user, TOKEN_EXPIRE_TIME_IN_MINUTES))
       computingUnit.setUid(user.getUid)
       computingUnit.setName(param.name)
       computingUnit.setCreationTime(new Timestamp(System.currentTimeMillis()))
@@ -648,7 +653,8 @@ class ComputingUnitManagingResource {
             param.memoryLimit,
             param.gpuLimit,
             computingUnitEnvironmentVariables ++ Map(
-              EnvironmentalVariable.ENV_USER_JWT_TOKEN -> userToken,
+              // Issue #5011: a computing unit pod holds no Postgres credentials and no user JWT
+              // token; it receives a per-execution token in the execute request instead.
               EnvironmentalVariable.ENV_JAVA_OPTS -> s"$jvmAddOpens -Xmx${param.jvmMemorySize}"
             ),
             Some(param.shmSize)
@@ -668,7 +674,8 @@ class ComputingUnitManagingResource {
         val awsRegion = param.awsRegion.getOrElse(AwsEc2Config.defaultRegion)
         try {
           val cuEnv = computingUnitEnvironmentVariables ++ Map(
-            EnvironmentalVariable.ENV_USER_JWT_TOKEN -> userToken,
+            // Issue #5011: no user JWT token is provisioned into a computing unit pod/instance;
+            // it receives a per-execution token in the execute request instead.
             EnvironmentalVariable.ENV_JAVA_OPTS -> s"$jvmAddOpens -Xmx2g"
           )
 

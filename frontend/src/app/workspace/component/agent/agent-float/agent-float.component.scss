@@ -1,0 +1,141 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+#agent-docked-button {
+  position: fixed;
+  bottom: 40px;
+  right: 10px;
+  z-index: 1002;
+  box-shadow:
+    0 3px 1px -2px #0003,
+    0 2px 2px #00000024,
+    0 1px 5px #0000001f;
+}
+
+.float-panel {
+  position: fixed;
+  right: 16px;
+  top: 72px;
+  z-index: 1001;
+  background: white;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.16);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+// The panel is anchored top-right, so the header (drag handle) lives on the fixed
+// top edge and the resize handles live on the left / bottom / bottom-left edges —
+// no overlap with the header. Each handle shows a visible, click-through grip.
+.float-resizer {
+  position: absolute;
+  background: transparent;
+  z-index: 6;
+
+  &::after {
+    content: "";
+    position: absolute;
+    background: rgba(0, 0, 0, 0.14);
+    border-radius: 2px;
+    transition: background 0.15s ease;
+    pointer-events: none;
+  }
+
+  &:hover::after {
+    background: #1890ff;
+  }
+
+  &.float-resizer-left {
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 8px;
+    cursor: ew-resize;
+
+    &::after {
+      top: 50%;
+      left: 2px;
+      width: 3px;
+      height: 48px;
+      transform: translateY(-50%);
+    }
+  }
+
+  &.float-resizer-bottom {
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 10px;
+    cursor: ns-resize;
+
+    &::after {
+      bottom: 3px;
+      left: 50%;
+      width: 48px;
+      height: 3px;
+      transform: translateX(-50%);
+    }
+  }
+
+  &.float-resizer-corner-bl {
+    bottom: 0;
+    left: 0;
+    width: 20px;
+    height: 20px;
+    cursor: nesw-resize;
+    z-index: 7;
+
+    &::after {
+      bottom: 4px;
+      left: 4px;
+      width: 7px;
+      height: 7px;
+      background: transparent;
+      border-bottom: 2px solid rgba(0, 0, 0, 0.25);
+      border-left: 2px solid rgba(0, 0, 0, 0.25);
+      border-radius: 0;
+    }
+
+    &:hover::after {
+      background: transparent;
+      border-bottom-color: #1890ff;
+      border-left-color: #1890ff;
+    }
+  }
+}
+
+.float-header {
+  flex: 0 0 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid #e0e0e0;
+  background: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: move;
+}
+
+.float-minimize {
+  padding: 0 6px !important;
+  cursor: pointer;
+}

@@ -296,15 +296,15 @@
             rel="noopener">Apache Texera (Incubating)</a>.
         </p>
       </div>
+
+      <ng-container *ngIf="(isLogin$ | async) === false">
+        <div
+          *ngIf="config.env.localLogin"
+          #loginSection
+          class="hero-login-panel">
+          <texera-local-login class="login-card"></texera-local-login>
+        </div>
+      </ng-container>
     </div>
   </section>
-
-  <ng-container *ngIf="(isLogin$ | async) === false">
-    <section
-      *ngIf="config.env.localLogin"
-      #loginSection
-      class="login-section">
-      <texera-local-login class="login-card"></texera-local-login>
-    </section>
-  </ng-container>
 </div>

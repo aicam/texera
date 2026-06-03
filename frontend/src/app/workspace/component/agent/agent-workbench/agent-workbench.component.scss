@@ -1,0 +1,200 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+:host {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: #f7f9fc;
+}
+
+.agent-workbench {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.agent-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 0;
+  background: #f7f9fc;
+  border-bottom: 1px solid #e6ebf2;
+}
+
+.agent-tab-list {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.agent-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 210px;
+  min-width: 96px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: #5f6b7a;
+  font-size: 12px;
+  line-height: 32px;
+  cursor: pointer;
+  outline: none;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+
+  i {
+    flex: 0 0 auto;
+    font-size: 14px;
+  }
+
+  .tab-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &:hover {
+    background: #eef3f9;
+    color: #1f2d3d;
+  }
+
+  &.active {
+    background: #ffffff;
+    border-color: #d9e2ec;
+    color: #0f1f33;
+    font-weight: 500;
+  }
+
+  &.pending:not(.active) {
+    color: #69788a;
+  }
+
+  &:hover .tab-actions,
+  &:focus-within .tab-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.tab-actions {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 6px;
+  border-radius: 5px;
+  background: #eef3f9;
+  box-shadow: -10px 0 10px #eef3f9;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.agent-tab.active .tab-actions {
+  background: #ffffff;
+  box-shadow: -10px 0 10px #ffffff;
+}
+
+.tab-action-button {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  padding: 0;
+  color: #52677e;
+
+  i {
+    font-size: 12px;
+  }
+
+  &.delete:hover {
+    color: #cf1322;
+  }
+}
+
+.tab-name-input {
+  width: 150px;
+  height: 24px;
+  padding: 2px 6px;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.new-agent-tab-button {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  color: #36516f;
+}
+
+.agent-tab-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+
+  texera-agent-chat {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+  }
+
+  texera-agent-chat[hidden] {
+    display: none;
+  }
+}
+
+.workbench-loading {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #595959;
+  font-size: 13px;
+}

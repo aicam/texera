@@ -35,14 +35,14 @@ import org.apache.texera.web.storage.{ExecutionCacheEntryUpdateStore, ExecutionS
   * frontend can refresh cache info as new cached results appear.
   *
   * @param client AmberClient to register callbacks
-  * @param cacheService OperatorPortCacheService for cache persistence
+  * @param cacheService OperatorPortCache (direct-DB on the dashboard, HTTP-remote on the CU) for cache persistence
   * @param workflowContext WorkflowContext for workflow/execution IDs
   * @param physicalPlan PhysicalPlan for fingerprint computation
   * @param executionStateStore Execution state store for cache entry updates
   */
 class ExecutionCacheService(
     client: AmberClient,
-    cacheService: OperatorPortCacheService,
+    cacheService: OperatorPortCache,
     workflowContext: WorkflowContext,
     physicalPlan: PhysicalPlan,
     executionStateStore: ExecutionStateStore

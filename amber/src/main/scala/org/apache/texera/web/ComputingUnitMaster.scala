@@ -25,44 +25,30 @@ import io.dropwizard.Configuration
 import io.dropwizard.configuration.{EnvironmentVariableSubstitutor, SubstitutingSourceProvider}
 import io.dropwizard.setup.{Bootstrap, Environment}
 import io.dropwizard.websockets.WebsocketBundle
-import org.apache.texera.amber.config.{ApplicationConfig, StorageConfig}
-import org.apache.texera.amber.core.storage.DocumentFactory
-import org.apache.texera.amber.core.virtualidentity.ExecutionIdentity
+import org.apache.texera.amber.config.ApplicationConfig
 import org.apache.texera.amber.core.workflow.{PhysicalPlan, WorkflowContext}
 import org.apache.texera.amber.engine.architecture.controller.ControllerConfig
-import org.apache.texera.amber.engine.architecture.rpc.controlreturns.WorkflowAggregatedState.{
-  COMPLETED,
-  FAILED
-}
-import org.apache.texera.amber.engine.common.AmberRuntime.scheduleRecurringCallThroughActorSystem
-import org.apache.texera.amber.engine.common.Utils.maptoStatusCode
+import org.apache.texera.amber.engine.architecture.rpc.controlreturns.WorkflowAggregatedState.KILLED
 import org.apache.texera.amber.engine.common.client.AmberClient
-import org.apache.texera.amber.engine.common.storage.SequentialRecordStorage
 import org.apache.texera.amber.engine.common.{AmberRuntime, Utils}
-import org.apache.texera.amber.util.JSONUtils.objectMapper
-import org.apache.texera.amber.util.ObjectMapperUtils
+import org.apache.texera.amber.engine.common.Utils.maptoStatusCode
+import org.apache.texera.amber.util.{ObjectMapperUtils, PhysicalPlanSerdeModule}
 import org.apache.commons.jcs3.access.exception.InvalidArgumentException
-import org.apache.texera.auth.SessionUser
-import org.apache.texera.dao.SqlServer
-import org.apache.texera.dao.jooq.generated.tables.pojos.WorkflowExecutions
-import org.apache.texera.web.auth.JwtAuth.setupJwtAuth
-import org.apache.texera.web.resource.dashboard.user.workflow.WorkflowExecutionsResource
 import org.apache.texera.web.resource.{
   SyncExecutionResource,
   WebsocketPayloadSizeTuner,
   WorkflowWebsocketResource
 }
-import org.apache.texera.web.service.ExecutionsMetadataPersistService
+import org.apache.texera.web.service.{ExecutionsMetadataPersistService, WorkflowService}
 import org.eclipse.jetty.server.session.SessionHandler
 import org.eclipse.jetty.servlet.FilterHolder
 import org.eclipse.jetty.websocket.server.WebSocketUpgradeFilter
 import org.apache.texera.web.resource.pythonvirtualenvironment.PveResource
 import org.apache.texera.web.resource.pythonvirtualenvironment.PveWebsocketResource
 
-import java.net.URI
 import java.time.Duration
+import java.util.concurrent.atomic.AtomicBoolean
 import scala.annotation.tailrec
-import scala.concurrent.duration.DurationInt
 
 object ComputingUnitMaster {
 
@@ -119,6 +105,40 @@ object ComputingUnitMaster {
 
 class ComputingUnitMaster extends io.dropwizard.Application[Configuration] with LazyLogging {
 
+  private val shutdownFlushed = new AtomicBoolean(false)
+
+  /**
+    * On graceful CU shutdown, finalize any execution still in a non-terminal state as KILLED. The CU
+    * is going away, so an orphaned RUNNING/READY/PAUSED row would otherwise lock its workflow until
+    * the staleness window elapsed; flushing it makes the unlock immediate. The write goes through the
+    * same conditional, terminal-monotonic UPDATE, so a genuinely-finished run (already terminal) is
+    * left untouched. Best-effort: a hard kill (SIGKILL/OOM) runs no hook and is handled by lazy
+    * on-read staleness instead.
+    */
+  private def flushNonTerminalExecutions(): Unit = {
+    if (!shutdownFlushed.compareAndSet(false, true)) return
+    // Snapshot the registry so a concurrent lifecycle-cleanup removal can't perturb the iteration.
+    WorkflowService.getAllWorkflowServices.toList.foreach { ws =>
+      try {
+        Option(ws.executionService.getValue).foreach { execService =>
+          val code = maptoStatusCode(execService.executionStateStore.metadataStore.getState.state)
+          if (code >= 0 && code < 3) {
+            // Single-shot (no retry) under the shutdown deadline; lazy on-read staleness is the
+            // backstop for any execution whose flush does not reach the dashboard in time.
+            ExecutionsMetadataPersistService.updateExecutionStatus(
+              execService.workflowContext.executionId,
+              maptoStatusCode(KILLED).toShort,
+              retryTerminal = false
+            )
+          }
+        }
+      } catch {
+        case t: Throwable =>
+          logger.warn(s"Best-effort shutdown status flush failed: ${t.getMessage}")
+      }
+    }
+  }
+
   override def initialize(bootstrap: Bootstrap[Configuration]): Unit = {
     // enable environment variable substitution in YAML config
     bootstrap.setConfigurationSourceProvider(
@@ -136,16 +156,26 @@ class ComputingUnitMaster extends io.dropwizard.Application[Configuration] with 
     )
     // register scala module to dropwizard default object mapper
     bootstrap.getObjectMapper.registerModule(DefaultScalaModule)
+    // The execution request carries a pre-compiled PhysicalPlan; register its serializers so the
+    // CU deserializes it byte-for-byte compatibly with the workflow-compiling-service's output.
+    PhysicalPlanSerdeModule.register(bootstrap.getObjectMapper)
   }
 
   override def run(configuration: Configuration, environment: Environment): Unit = {
     ObjectMapperUtils.warmupObjectMapperForOperatorsSerde()
 
-    SqlServer.initConnection(
-      StorageConfig.jdbcUrl,
-      StorageConfig.jdbcUsername,
-      StorageConfig.jdbcPassword
-    )
+    // On graceful shutdown, finalize any still-running execution so a departing CU does not leave a
+    // workflow locked until the staleness window elapses.
+    environment
+      .lifecycle()
+      .manage(new io.dropwizard.lifecycle.Managed {
+        override def start(): Unit = {}
+        override def stop(): Unit = flushNonTerminalExecutions()
+      })
+
+    // The Computing Unit never connects to Postgres: it routes execution-metadata operations over
+    // HTTP to the dashboard service and holds no database credentials of its own (issue #5011).
+    // Because SqlServer is never initialized here, RemoteExecutionMetadata is always active.
 
     environment.jersey.setUrlPattern("/api/*")
 
@@ -163,45 +193,24 @@ class ComputingUnitMaster extends io.dropwizard.Application[Configuration] with 
 
     environment.jersey.register(classOf[PveResource])
 
-    setupJwtAuth(environment)
-
-    environment.jersey.register(
-      new io.dropwizard.auth.AuthValueFactoryProvider.Binder[SessionUser](classOf[SessionUser])
-    )
-    environment.jersey.register(
-      classOf[org.glassfish.jersey.server.filter.RolesAllowedDynamicFeature]
-    )
+    // The Computing Unit performs no JWT authentication and holds no JWT secret (issue #5011): no
+    // JwtAuthFilter, no RolesAllowedDynamicFeature, and no @Auth-injection binder are registered —
+    // none of its endpoints are authenticated. The client ships a pre-compiled physical plan, and
+    // anything needing auth (e.g. result export) is served by the dashboard service instead.
+    // Contrast TexeraWebApplication, which keeps full JWT auth.
     environment
       .servlets()
       .addServletListeners(
         new WebsocketPayloadSizeTuner(ApplicationConfig.maxWorkflowWebsocketRequestPayloadSizeKb)
       )
 
-    val timeToLive: Int = ApplicationConfig.sinkStorageTTLInSecs
-    if (ApplicationConfig.cleanupAllExecutionResults) {
-      // do one time cleanup of collections that were not closed gracefully before restart/crash
-      // retrieve all executions that were executing before the reboot.
-      val allExecutionsBeforeRestart: List[WorkflowExecutions] =
-        WorkflowExecutionsResource.getExpiredExecutionsWithResultOrLog(-1)
-      cleanExecutions(
-        allExecutionsBeforeRestart,
-        statusByte => {
-          if (statusByte != maptoStatusCode(COMPLETED)) {
-            maptoStatusCode(FAILED) // for incomplete executions, mark them as failed.
-          } else {
-            statusByte
-          }
-        }
-      )
-    }
-    scheduleRecurringCallThroughActorSystem(
-      2.seconds,
-      ApplicationConfig.sinkStorageCleanUpCheckIntervalInSecs.seconds
-    ) {
-      recurringCheckExpiredResults(timeToLive)
-    }
+    // Expired-result/log cleanup needs a database connection, so it is owned by the dashboard
+    // service; the computing unit (which holds no Postgres credentials) does not run it.
 
-    environment.jersey.register(classOf[WorkflowExecutionsResource])
+    // The computing unit does not expose the /executions HTTP resource: result export (its only
+    // client-facing endpoints) is handled by the dashboard service, which has the auth, database,
+    // and shared Iceberg (Lakekeeper) catalog access to read and export results. The CU still calls
+    // WorkflowExecutionsResource's companion-object helpers internally; it just doesn't serve them.
     environment.jersey.register(classOf[SyncExecutionResource])
 
     // Route request logs through SLF4J, controlled by TEXERA_SERVICE_LOG_LEVEL.
@@ -231,77 +240,4 @@ class ComputingUnitMaster extends io.dropwizard.Application[Configuration] with 
     )
   }
 
-  /**
-    * This function drops the collections.
-    * MongoDB doesn't have an API of drop collection where collection name in (from a subquery), so the implementation is to retrieve
-    * the entire list of those documents that have expired, then loop the list to drop them one by one
-    */
-  private def cleanExecutions(
-      executions: List[WorkflowExecutions],
-      statusChangeFunc: Short => Short
-  ): Unit = {
-    // drop the collection and update the status to ABORTED
-    executions.foreach(execEntry => {
-      dropCollections(execEntry.getResult)
-      deleteReplayLog(execEntry.getLogLocation)
-      // then delete the pointer from mySQL
-      val executionIdentity = ExecutionIdentity(execEntry.getEid.longValue())
-      ExecutionsMetadataPersistService.tryUpdateExistingExecution(executionIdentity) { execution =>
-        execution.setResult("")
-        execution.setLogLocation(null)
-        execution.setStatus(statusChangeFunc(execution.getStatus))
-      }
-    })
-  }
-
-  private def dropCollections(result: String): Unit = {
-    if (result == null || result.isEmpty) {
-      return
-    }
-    // TODO: merge this logic to the server-side in-mem cleanup
-    // parse the JSON
-    try {
-      val node = objectMapper.readTree(result)
-      val collectionEntries = node.get("results")
-      // loop every collection and drop it
-      collectionEntries.forEach(collection => {
-        val storageType = collection.get("storageType").asText()
-        val collectionName = collection.get("storageKey").asText()
-        storageType match {
-          case DocumentFactory.ICEBERG =>
-          // rely on the server-side result cleanup logic.
-        }
-      })
-    } catch {
-      case e: Throwable =>
-        logger.warn("result collection cleanup failed.", e)
-    }
-  }
-
-  private def deleteReplayLog(logLocation: String): Unit = {
-    if (logLocation == null || logLocation.isEmpty) {
-      return
-    }
-    val uri = new URI(logLocation)
-    try {
-      val storage = SequentialRecordStorage.getStorage(Some(uri))
-      storage.deleteStorage()
-    } catch {
-      case throwable: Throwable =>
-        logger.warn(s"failed to delete log at $logLocation", throwable)
-    }
-  }
-
-  /**
-    * This function is called periodically and checks all expired collections and deletes them
-    */
-  private def recurringCheckExpiredResults(
-      timeToLive: Int
-  ): Unit = {
-    // retrieve all executions that are completed and their last update time goes beyond the ttl
-    val expiredResults: List[WorkflowExecutions] =
-      WorkflowExecutionsResource.getExpiredExecutionsWithResultOrLog(timeToLive)
-    // drop the collections and clean the logs
-    cleanExecutions(expiredResults, statusByte => statusByte)
-  }
 }

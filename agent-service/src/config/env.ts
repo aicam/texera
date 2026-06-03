@@ -30,10 +30,18 @@ const EnvSchema = z.object({
   LOG_PRETTY: z.coerce.boolean().default(false),
 
   TEXERA_DASHBOARD_SERVICE_ENDPOINT: z.string().url().default("http://localhost:8080"),
+  FILE_SERVICE_ENDPOINT: z.string().url().default("http://localhost:9092"),
   LLM_ENDPOINT: z.string().url().default("http://localhost:9096"),
   WORKFLOW_COMPILING_SERVICE_ENDPOINT: z.string().url().default("http://localhost:9090"),
   WORKFLOW_EXECUTION_SERVICE_ENDPOINT: z.string().url().default("http://localhost:8085"),
   EXECUTION_ENDPOINT_TEMPLATE: z.string().optional(),
+
+  MCP_SERVERS: z.string().default("[]"),
+  MCP_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
+
+  STORAGE_JDBC_URL: z.string().default("jdbc:postgresql://localhost:5432/texera_db?currentSchema=texera_db,public"),
+  STORAGE_JDBC_USERNAME: z.string().default("postgres"),
+  STORAGE_JDBC_PASSWORD: z.string().default("postgres"),
 });
 
 export const env = EnvSchema.parse(process.env);

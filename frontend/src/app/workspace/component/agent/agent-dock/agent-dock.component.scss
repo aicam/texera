@@ -1,0 +1,102 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+// The host is a flex item in the dashboard layout. Its width (bound from the
+// component) reserves real space, so the dashboard content shrinks instead of being
+// overlapped. When collapsed the width is 0 and only the floating button shows.
+:host {
+  display: block;
+  flex: 0 0 auto;
+  height: 100%;
+  position: relative;
+}
+
+#agent-docked-button {
+  position: fixed;
+  bottom: 40px;
+  right: 10px;
+  z-index: 1002;
+  box-shadow:
+    0 3px 1px -2px #0003,
+    0 2px 2px #00000024,
+    0 1px 5px #0000001f;
+}
+
+.dock-panel {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  background: white;
+  border-left: 1px solid #d9d9d9;
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+// Thin grab strip on the left edge.
+.dock-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 6px;
+  cursor: ew-resize;
+  z-index: 3;
+  background: transparent;
+
+  &::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 2px;
+    width: 2px;
+    background: rgba(0, 0, 0, 0.08);
+    transition: background 0.15s ease;
+  }
+
+  &:hover::after {
+    background: #1890ff;
+  }
+}
+
+.dock-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dock-header {
+  flex: 0 0 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid #e0e0e0;
+  background: white;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.dock-minimize {
+  padding: 0 6px !important;
+}

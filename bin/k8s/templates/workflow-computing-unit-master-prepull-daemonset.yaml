@@ -42,7 +42,7 @@ spec:
       initContainers:
         - name: prepuller
           image: {{ .Values.texera.imageRegistry }}/{{ .Values.workflowComputingUnitPool.imageName }}:{{ .Values.workflowComputingUnitPool.imageTag | default .Values.texera.imageTag }}
-          imagePullPolicy: Always
+          imagePullPolicy: {{ .Values.texeraImages.pullPolicy }}
           command: ["sh", "-c", "true"]
       containers:
         - name: pause
@@ -53,4 +53,4 @@ spec:
               memory: 8Mi
             requests:
               cpu: 1m
-              memory: 8Mi 
+              memory: 8Mi

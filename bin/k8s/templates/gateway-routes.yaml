@@ -114,16 +114,16 @@ spec:
     - {{ .Values.gatewayConfig.hostname }}
   {{- end }}
   rules:
+    # Only the per-computing-unit websocket needs dynamic (per-cuid) routing via ext-auth. Result
+    # export and runtime-stats endpoints live on the Dashboard Service (they read the committed
+    # result/stats from the shared Iceberg catalog and need the Postgres DB), so they are NOT routed
+    # to a computing-unit pod here — they fall through to the static "/api" rule -> webserver-svc, and
+    # the dashboard performs its own JWT auth. (Routing them through the per-cuid dynamic backend sent
+    # them to a CU pod that does not serve those endpoints, and ext-auth 403'd for lack of a cuid.)
     - matches:
         - path:
             type: PathPrefix
             value: /wsapi
-        - path:
-            type: RegularExpression
-            value: "^/api/executions/\\d+/stats/\\d+$"
-        - path:
-            type: PathPrefix
-            value: /api/executions/result/export
       backendRefs:
         - group: gateway.envoyproxy.io
           kind: Backend

@@ -107,6 +107,12 @@ object ApplicationConfig {
     getConfSource.getBoolean("web-server.clean-all-execution-results-on-server-start")
   val maxWorkflowWebsocketRequestPayloadSizeKb: Int =
     getConfSource.getInt("web-server.max-workflow-websocket-request-payload-size-kb")
+  val dashboardServiceExecutionMetadataEndpoint: String =
+    getConfSource.getString("web-server.dashboard-service-execution-metadata-endpoint")
+  val executionOngoingStaleAfterSeconds: Int =
+    getConfSource.getInt("web-server.execution-ongoing-stale-after-seconds")
+  val executionStatusHeartbeatIntervalSeconds: Int =
+    getConfSource.getInt("web-server.execution-status-heartbeat-interval-seconds")
 
   // AI Assistant
   val aiAssistantConfig: Option[Config] =

@@ -19,6 +19,7 @@
 
 package org.apache.texera.amber.engine.architecture.worker
 
+import org.apache.texera.amber.core.storage.UserJwtTokenProvider
 import org.apache.texera.amber.core.virtualidentity.{ActorVirtualIdentity, ChannelIdentity}
 import org.apache.texera.amber.engine.architecture.logreplay.ReplayLogManager
 import org.apache.texera.amber.engine.architecture.rpc.controlcommands.EmbeddedControlMessage
@@ -46,7 +47,8 @@ class DPThread(
     val actorId: ActorVirtualIdentity,
     dp: DataProcessor,
     logManager: ReplayLogManager,
-    internalQueue: LinkedBlockingQueue[DPInputQueueElement]
+    internalQueue: LinkedBlockingQueue[DPInputQueueElement],
+    userJwtToken: Option[String] = None
 ) extends AmberLogging {
 
   // initialize dp thread upon construction
@@ -91,6 +93,9 @@ class DPThread(
       dpThread = dpThreadExecutor.submit(new Runnable() {
         def run(): Unit = {
           Thread.currentThread().setName(getThreadName)
+          // Bind the issuing user's token to this worker's dedicated DP thread so the operator's
+          // outbound dataset calls (presign / path resolution) authenticate as that user (#5011).
+          UserJwtTokenProvider.setForCurrentThread(userJwtToken)
           logger.info("DP thread started")
           startFuture.complete(())
           dp.statisticsManager.initializeWorkerStartTime(System.nanoTime())

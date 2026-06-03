@@ -1,0 +1,119 @@
+<!--
+ Licensed to the Apache Software Foundation (ASF) under one
+ or more contributor license agreements.  See the NOTICE file
+ distributed with this work for additional information
+ regarding copyright ownership.  The ASF licenses this file
+ to you under the Apache License, Version 2.0 (the
+ "License"); you may not use this file except in compliance
+ with the License.  You may obtain a copy of the License at
+
+   http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing,
+ software distributed under the License is distributed on an
+ "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ KIND, either express or implied.  See the License for the
+ specific language governing permissions and limitations
+ under the License.
+-->
+
+<div class="agent-workbench">
+  <div class="agent-tabs">
+    <div class="agent-tab-list">
+      <div
+        *ngFor="let tab of tabs; let i = index; trackBy: trackByTabId"
+        class="agent-tab"
+        role="button"
+        tabindex="0"
+        [class.active]="activeTabId === tab.localId"
+        [class.pending]="!tab.agentInfo"
+        (click)="selectTab(tab.localId)"
+        (keydown.enter)="selectTab(tab.localId)">
+        <ng-container *ngIf="editingTabId === tab.localId; else tabLabel">
+          <input
+            nz-input
+            class="tab-name-input"
+            [(ngModel)]="editingName"
+            (click)="$event.stopPropagation()"
+            (keydown.enter)="saveTabName(tab); $event.stopPropagation()"
+            (keydown.escape)="cancelTabNameEdit($event)"
+            (blur)="saveTabName(tab)" />
+        </ng-container>
+
+        <ng-template #tabLabel>
+          <i
+            nz-icon
+            [nzType]="tab.agentInfo ? 'robot' : 'clock-circle'"
+            nzTheme="outline"></i>
+          <span class="tab-label">{{ getTabLabel(tab, i) }}</span>
+          <span
+            *ngIf="tab.agentInfo"
+            class="tab-actions">
+            <button
+              nz-button
+              nzType="text"
+              nzSize="small"
+              class="tab-action-button"
+              (click)="startTabNameEdit(tab, $event)"
+              nz-tooltip
+              nzTooltipTitle="Rename agent">
+              <i
+                nz-icon
+                nzType="edit"
+                nzTheme="outline"></i>
+            </button>
+            <button
+              nz-button
+              nzType="text"
+              nzSize="small"
+              class="tab-action-button delete"
+              (click)="deleteTabAgent(tab, $event)"
+              nz-tooltip
+              nzTooltipTitle="Delete agent">
+              <i
+                nz-icon
+                nzType="delete"
+                nzTheme="outline"></i>
+            </button>
+          </span>
+        </ng-template>
+      </div>
+    </div>
+
+    <button
+      nz-button
+      nzType="text"
+      nzSize="small"
+      class="new-agent-tab-button"
+      (click)="addPendingTab()"
+      nz-tooltip
+      nzTooltipTitle="New chat">
+      <i
+        nz-icon
+        nzType="plus"
+        nzTheme="outline"></i>
+    </button>
+  </div>
+
+  <div
+    *ngIf="isLoadingAgent"
+    class="workbench-loading">
+    <nz-spin
+      nzSimple
+      nzSize="large"></nz-spin>
+    <span>Loading agent...</span>
+  </div>
+
+  <div
+    *ngIf="!isLoadingAgent"
+    class="agent-tab-content">
+    <texera-agent-chat
+      *ngFor="let tab of tabs; trackBy: trackByTabId"
+      [hidden]="activeTabId !== tab.localId"
+      [agentInfo]="tab.agentInfo"
+      [isActive]="isActiveAgentTab(tab)"
+      (agentCreated)="onAgentReady($event, tab.localId)"
+      (agentUpdated)="onAgentUpdated($event, tab.localId)">
+    </texera-agent-chat>
+  </div>
+</div>

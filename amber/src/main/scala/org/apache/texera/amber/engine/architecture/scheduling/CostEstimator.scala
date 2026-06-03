@@ -121,6 +121,14 @@ class DefaultCostEstimator(
       wid: Long
   ): Option[Map[String, Double]] = {
 
+    // The Computing Unit holds no Postgres connection (issue #5011): it never initializes SqlServer.
+    // Cost-based estimation reads a past execution's runtime-stats URI from the DB, so on the CU skip
+    // the query entirely and fall back to the port-count cost (rather than relying on a swallowed
+    // SqlServer.getInstance() failure).
+    if (!SqlServer.isInitialized) {
+      return None
+    }
+
     val uriString: String = withTransaction(
       SqlServer
         .getInstance()

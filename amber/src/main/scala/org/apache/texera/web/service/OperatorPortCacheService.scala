@@ -46,19 +46,13 @@ import scala.util.Try
   *
   * @param dao OperatorPortCacheDao for database access
   */
-class OperatorPortCacheService(dao: OperatorPortCacheDao) {
-  private val context = SqlServer.getInstance().createDSLContext()
+class OperatorPortCacheService(dao: OperatorPortCacheDao) extends OperatorPortCache {
+  // Lazy so the service can be constructed in a process without a Postgres connection (e.g. a
+  // resource that bundles it being registered on a Postgres-free computing unit). Only the
+  // Dashboard Service ever exercises the direct-DB path.
+  private lazy val context = SqlServer.getInstance().createDSLContext()
 
-  /**
-    * Result of cache invalidation by source executions.
-    *
-    * @param deletedRows number of rows removed from operator_port_cache
-    * @param deletedResultUris cached result URIs deleted/cleared during invalidation
-    */
-  case class SourceExecutionInvalidationResult(
-      deletedRows: Int,
-      deletedResultUris: Set[URI]
-  )
+  import OperatorPortCache.SourceExecutionInvalidationResult
 
   /**
     * Lookup cached outputs for all materializable ports in the physical plan.
@@ -75,6 +69,7 @@ class OperatorPortCacheService(dao: OperatorPortCacheDao) {
     */
   def lookupCachedOutputs(
       workflowId: WorkflowIdentity,
+      @scala.annotation.unused executionId: ExecutionIdentity,
       physicalPlan: PhysicalPlan
   ): Map[GlobalPortIdentity, CachedOutput] = {
     physicalPlan.operators

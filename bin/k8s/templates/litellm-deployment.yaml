@@ -34,6 +34,9 @@ spec:
         karpenter.sh/do-not-disrupt: "true"
       labels:
         app: {{ .Release.Name }}-{{ .Values.litellm.name }}
+      annotations:
+        checksum/agent-service-secret: {{ include (print $.Template.BasePath "/agent-service-secret.yaml") . | sha256sum }}
+        checksum/litellm-config: {{ include (print $.Template.BasePath "/litellm-config.yaml") . | sha256sum }}
     spec:
       containers:
         - name: {{ .Values.litellm.name }}

@@ -21,6 +21,8 @@ import { ComponentFixture, TestBed } from "@angular/core/testing";
 import { RouterTestingModule } from "@angular/router/testing";
 import { NzIconModule } from "ng-zorro-antd/icon";
 import { UserOutline, LockOutline } from "@ant-design/icons-angular/icons";
+import { SocialAuthService } from "@abacritt/angularx-social-login";
+import { EMPTY } from "rxjs";
 import { vi } from "vitest";
 
 import { AboutComponent } from "./about.component";
@@ -57,6 +59,10 @@ describe("AboutComponent", () => {
       providers: [
         { provide: UserService, useClass: StubUserService },
         { provide: NotificationService, useValue: notificationSpy },
+        {
+          provide: SocialAuthService,
+          useValue: { authState: EMPTY, initState: EMPTY, signOut: vi.fn().mockResolvedValue(undefined) },
+        },
         ...commonTestProviders,
       ],
     });
@@ -79,6 +85,7 @@ describe("AboutComponent", () => {
     userService.user = undefined;
     build();
     expect(fixture.nativeElement.querySelector("texera-local-login")).not.toBeNull();
+    expect(fixture.nativeElement.querySelector(".hero texera-local-login")).not.toBeNull();
   });
 
   it("hides the local login form when localLogin is disabled in config", () => {

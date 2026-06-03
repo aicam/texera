@@ -407,6 +407,23 @@ services:
       retries: 10
       start_period: 15s
 
+  # BioMCP exposes biomedical tools through the standard MCP streamable HTTP transport.
+  bio-mcp-service:
+    image: ${IMAGE_REGISTRY:-ghcr.io/apache}/texera-bio-mcp-service:${IMAGE_TAG:-latest}
+    container_name: bio-mcp-service
+    restart: always
+    environment:
+      - BIOMCP_API_KEY=${BIOMCP_API_KEY:-}
+      - OMIM_API_KEY=${OMIM_API_KEY:-}
+      - ENABLE_PLACEHOLDER_TOOLS=${ENABLE_PLACEHOLDER_TOOLS:-false}
+      - ENABLE_OMIM_PLACEHOLDER=${ENABLE_OMIM_PLACEHOLDER:-false}
+      - ENABLE_BLAST_PLACEHOLDER=${ENABLE_BLAST_PLACEHOLDER:-false}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3010/healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   # AgentService manages the texera agents' interal states, and provide endpoints for CRUD agents
   agent-service:
     image: ${IMAGE_REGISTRY:-ghcr.io/apache}/texera-agent-service:${IMAGE_TAG:-latest}
@@ -419,8 +436,14 @@ services:
         condition: service_healthy
       workflow-runtime-coordinator-service:
         condition: service_started
+      bio-mcp-service:
+        condition: service_healthy
     env_file:
       - .env
+    environment:
+      - MCP_SERVERS=[{"name":"biomcp","url":"http://bio-mcp-service:3010/mcp","toolPrefix":"biomcp","apiKeyEnv":"BIOMCP_API_KEY"}]
+      - MCP_REQUEST_TIMEOUT_MS=30000
+      - BIOMCP_API_KEY=${BIOMCP_API_KEY:-}
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3001/api/healthcheck"]
       interval: 5s

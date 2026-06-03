@@ -298,6 +298,10 @@ class ExecutionResultService(
     with LazyLogging {
   private val resultPullingFrequency = ApplicationConfig.executionResultPollingInSecs
   private var resultUpdateCancellable: Cancellable = _
+  // The execution this service is currently attached to. Result pagination uses it directly so a
+  // DB-less computing unit authenticates the result read with that execution's per-request token
+  // (registered at creation) instead of a tokenless /latest lookup that would 401 on the dashboard.
+  private var attachedExecutionId: Option[ExecutionIdentity] = None
 
   def attachToExecution(
       executionId: ExecutionIdentity,
@@ -305,6 +309,7 @@ class ExecutionResultService(
       physicalPlan: PhysicalPlan,
       client: AmberClient
   ): Unit = {
+    attachedExecutionId = Some(executionId)
     if (resultUpdateCancellable != null && !resultUpdateCancellable.isCancelled) {
       resultUpdateCancellable.cancel()
     }
@@ -430,9 +435,13 @@ class ExecutionResultService(
   def handleResultPagination(request: ResultPaginationRequest): TexeraWebSocketEvent = {
     // calculate from index (pageIndex starts from 1 instead of 0)
     val from = request.pageSize * (request.pageIndex - 1)
-    val latestExecutionId = getLatestExecutionId(workflowIdentity, computingUnitId).getOrElse(
-      throw new IllegalStateException("No execution is recorded")
-    )
+    // Prefer the attached execution (its per-request token is registered, so the result read
+    // authenticates); fall back to a /latest lookup only when this service isn't attached to a run.
+    val latestExecutionId = attachedExecutionId
+      .orElse(getLatestExecutionId(workflowIdentity, computingUnitId))
+      .getOrElse(
+        throw new IllegalStateException("No execution is recorded")
+      )
 
     val storageUriOption = WorkflowExecutionsResource.getResultUriByLogicalPortId(
       latestExecutionId,

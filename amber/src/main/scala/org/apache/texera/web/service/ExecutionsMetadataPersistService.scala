@@ -21,10 +21,12 @@ package org.apache.texera.web.service
 
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.texera.amber.core.virtualidentity.{ExecutionIdentity, WorkflowIdentity}
+import org.apache.texera.amber.engine.common.Utils
 import org.apache.texera.dao.SqlServer
 import org.jooq.exception.DataAccessException
 import org.apache.texera.dao.jooq.generated.tables.daos.WorkflowExecutionsDao
 import org.apache.texera.dao.jooq.generated.tables.pojos.WorkflowExecutions
+import org.apache.texera.web.resource.dashboard.user.workflow.WorkflowExecutionsResource
 import org.apache.texera.web.resource.dashboard.user.workflow.WorkflowVersionResource._
 
 import java.sql.Timestamp
@@ -56,8 +58,19 @@ object ExecutionsMetadataPersistService extends LazyLogging {
       uid: Integer,
       executionName: String,
       environmentVersion: String,
-      computingUnitId: Integer
+      computingUnitId: Integer,
+      userJwtToken: Option[String] = None
   ): ExecutionIdentity = {
+    if (RemoteExecutionMetadata.enabled) {
+      return RemoteExecutionMetadata.createExecution(
+        workflowId.id,
+        uid,
+        executionName,
+        environmentVersion,
+        computingUnitId,
+        userJwtToken
+      )
+    }
     // first retrieve the latest version of this workflow
     val vid = getLatestVersion(workflowId.id.toInt)
     val newExecution = new WorkflowExecutions()
@@ -87,7 +100,55 @@ object ExecutionsMetadataPersistService extends LazyLogging {
     ExecutionIdentity(newExecution.getEid.longValue())
   }
 
+  /**
+    * The single chokepoint for persisting an execution's status. Replaces the old POJO-mutator path
+    * (which could not cross HTTP and therefore silently no-op'd on the Postgres-free computing unit).
+    *
+    * Both modes converge on the same conditional, terminal-monotonic UPDATE
+    * (WorkflowExecutionsResource.updateExecutionStatus): remote routes it over HTTP to the dashboard
+    * service; local runs it directly. Terminal writes (COMPLETED/FAILED/KILLED) are the ones whose
+    * loss strands a workflow as "running forever" and they fire during teardown when the dashboard
+    * call is most likely to blip, so they are retried; the conditional UPDATE is idempotent, so the
+    * retry is safe. Non-terminal writes are best-effort: a lost one is overwritten by the next
+    * transition, and the retried terminal write clears the editing lock regardless.
+    *
+    * `retryTerminal = false` skips the retry — used by the CU's graceful-shutdown flush, where many
+    * executions are finalized under a shutdown deadline and a blocking retry against an unresponsive
+    * dashboard would risk a hard kill before the flush finishes (lazy on-read staleness is the
+    * backstop for any write lost there).
+    */
+  def updateExecutionStatus(
+      executionId: ExecutionIdentity,
+      statusCode: Short,
+      retryTerminal: Boolean = true
+  ): Unit = {
+    if (!RemoteExecutionMetadata.enabled) {
+      WorkflowExecutionsResource.updateExecutionStatus(executionId.id.toLong, statusCode)
+      return
+    }
+    val isTerminal = statusCode == 3 || statusCode == 4 || statusCode == 5
+    try {
+      if (isTerminal && retryTerminal) {
+        Utils.retry(attempts = 3, baseBackoffTimeInMS = 200) {
+          RemoteExecutionMetadata.updateExecutionStatus(executionId.id.toLong, statusCode)
+        }
+      } else {
+        RemoteExecutionMetadata.updateExecutionStatus(executionId.id.toLong, statusCode)
+      }
+    } catch {
+      case t: Throwable =>
+        logger.warn(
+          s"Failed to persist status $statusCode for execution $executionId" +
+            (if (isTerminal && retryTerminal) " after retries" else "") + s": ${t.getMessage}"
+        )
+    }
+  }
+
   def tryGetExistingExecution(executionId: ExecutionIdentity): Option[WorkflowExecutions] = {
+    if (RemoteExecutionMetadata.enabled) {
+      // degraded: previous-execution lookup is not needed on the computing unit in remote mode.
+      return None
+    }
     try {
       Option(workflowExecutionsDao.fetchOneByEid(executionId.id.toInt))
     } catch {
@@ -100,6 +161,11 @@ object ExecutionsMetadataPersistService extends LazyLogging {
   def tryUpdateExistingExecution(
       executionId: ExecutionIdentity
   )(updateFunc: WorkflowExecutions => Unit): Unit = {
+    if (RemoteExecutionMetadata.enabled) {
+      // no-op: execution-status updates are owned by the dashboard service in remote mode.
+      logger.debug("Skipping execution update in remote mode.")
+      return
+    }
     try {
       val execution = workflowExecutionsDao.fetchOneByEid(executionId.id.toInt)
       updateFunc(execution)

@@ -1,0 +1,28 @@
+{
+  "name": "texera-bio-mcp-service",
+  "version": "0.1.0",
+  "description": "Texera BioMCP service for biomedical MCP tools",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\""
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "rate-limiter-flexible": "7.3.0",
+    "xml2js": "0.6.2",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.3",
+    "@types/xml2js": "0.4.14",
+    "prettier": "3.4.2",
+    "typescript": "5.9.3"
+  },
+  "packageManager": "bun@1.3.14"
+}

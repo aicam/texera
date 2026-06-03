@@ -18,6 +18,34 @@
  */
 
 const { LicenseWebpackPlugin } = require("license-webpack-plugin");
+const { resolve } = require("path");
+
+const monacoDefaultExtensionLicenseText = `MIT License
+
+Copyright (c) CodinGame
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.`;
+
+const licenseTextOverrides = {
+  "@codingame/monaco-vscode-python-default-extension": monacoDefaultExtensionLicenseText,
+  "@codingame/monaco-vscode-r-default-extension": monacoDefaultExtensionLicenseText,
+};
 
 module.exports = {
   module: {
@@ -26,8 +54,8 @@ module.exports = {
         test: /\.css$/,
         use: ["style-loader", "css-loader"],
         include: [
-          require("path").resolve(__dirname, "node_modules/monaco-editor"),
-          require("path").resolve(__dirname, "node_modules/monaco-breakpoints")
+          resolve(__dirname, "node_modules/monaco-editor"),
+          resolve(__dirname, "node_modules/monaco-breakpoints"),
         ],
       },
     ],
@@ -43,22 +71,19 @@ module.exports = {
     new LicenseWebpackPlugin({
       perChunkOutput: false,
       outputFilename: "3rdpartylicenses.json",
-      renderLicenses: (modules) =>
+      licenseTextOverrides,
+      renderLicenses: modules =>
         JSON.stringify(
           modules
-            .map((m) => ({
+            .map(m => ({
               name: m.packageJson && m.packageJson.name,
               version: m.packageJson && m.packageJson.version,
               license: m.licenseId,
             }))
-            .filter((e) => e.name && e.version)
-            .sort((a, b) =>
-              a.name === b.name
-                ? a.version.localeCompare(b.version)
-                : a.name.localeCompare(b.name),
-            ),
+            .filter(e => e.name && e.version)
+            .sort((a, b) => (a.name === b.name ? a.version.localeCompare(b.version) : a.name.localeCompare(b.name))),
           null,
-          2,
+          2
         ),
     }),
   ],

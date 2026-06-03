@@ -20,15 +20,18 @@
 package org.apache.texera.web.service
 
 import com.typesafe.scalalogging.LazyLogging
-import org.apache.texera.amber.core.virtualidentity.{ExecutionIdentity, WorkflowIdentity}
-import org.apache.texera.amber.core.workflow.WorkflowContext
+import org.apache.texera.amber.core.virtualidentity.{
+  ExecutionIdentity,
+  OperatorIdentity,
+  WorkflowIdentity
+}
+import org.apache.texera.amber.core.workflow.{CachedOutput, GlobalPortIdentity, WorkflowContext}
 import org.apache.texera.amber.engine.architecture.controller.{ControllerConfig, Workflow}
 import org.apache.texera.amber.engine.architecture.rpc.controlcommands.EmptyRequest
 import org.apache.texera.amber.engine.architecture.rpc.controlreturns.WorkflowAggregatedState._
 import org.apache.texera.amber.engine.common.Utils
 import org.apache.texera.amber.engine.common.client.AmberClient
 import org.apache.texera.amber.engine.common.executionruntimestate.ExecutionMetadataStore
-import org.apache.texera.amber.core.workflow.{CachedOutput, GlobalPortIdentity}
 import org.apache.texera.amber.core.workflow.cache.FingerprintUtil
 import org.apache.texera.amber.util.serde.GlobalPortIdentitySerde.SerdeOps
 import org.apache.texera.web.model.websocket.event.{
@@ -43,7 +46,6 @@ import org.apache.texera.web.resource.dashboard.user.workflow.WorkflowExecutions
 import org.apache.texera.web.storage.{ExecutionCacheUsageStore, ExecutionStateStore}
 import org.apache.texera.web.storage.ExecutionStateStore.updateWorkflowState
 import org.apache.texera.web.{ComputingUnitMaster, SubscriptionManager, WebsocketInput}
-import org.apache.texera.workflow.WorkflowCompiler
 
 import java.net.URI
 import scala.collection.mutable
@@ -51,11 +53,44 @@ import scala.collection.mutable
 object WorkflowExecutionService {
   def getLatestExecutionId(
       workflowId: WorkflowIdentity,
-      computingUnitId: Int
+      computingUnitId: Int,
+      userJwtToken: Option[String] = None
   ): Option[ExecutionIdentity] = {
     WorkflowExecutionsResource
-      .getLatestExecutionID(workflowId.id.toInt, computingUnitId)
+      .getLatestExecutionID(workflowId.id.toInt, computingUnitId, userJwtToken)
       .map(eid => new ExecutionIdentity(eid.longValue()))
+  }
+
+  /**
+    * The non-internal output ports that need result storage so their results are viewable: the
+    * output ports of every TERMINAL physical operator (no downstream links — i.e. the operators at
+    * the end of each path, whose outputs are the workflow's results) UNION those of the explicitly
+    * requested to-view ("eye-icon") operators.
+    *
+    * Since the client now ships a ready-to-run physical plan and the CU no longer compiles in
+    * process, the CU re-derives this set here. It mirrors the in-process compiler's original rule
+    * (`logicalPlan.getTerminalOperatorIds ++ opsToViewResult`), expressed on the physical plan via
+    * downstream-link reachability. (Blocking/intermediate edges are materialized separately by the
+    * schedule generator.)
+    */
+  def outputPortsForViewResult(
+      physicalPlan: org.apache.texera.amber.core.workflow.PhysicalPlan,
+      opsToViewResult: Seq[String]
+  ): Set[GlobalPortIdentity] = {
+    val viewOps = opsToViewResult.map(OperatorIdentity(_)).toSet
+    physicalPlan.operators
+      .filter { physicalOp =>
+        // a terminal operator (no downstream physical links) is a workflow output, OR the operator
+        // was explicitly requested for viewing.
+        physicalPlan.getDownstreamPhysicalLinks(physicalOp.id).isEmpty ||
+        viewOps.contains(physicalOp.id.logicalOpId)
+      }
+      .flatMap { physicalOp =>
+        physicalOp.outputPorts.keys
+          .filterNot(_.internal)
+          .map(portId => GlobalPortIdentity(opId = physicalOp.id, portId = portId))
+      }
+      .toSet
   }
 
   /**
@@ -79,7 +114,7 @@ class WorkflowExecutionService(
     controllerConfig: ControllerConfig,
     val workflowContext: WorkflowContext,
     resultService: ExecutionResultService,
-    cacheService: OperatorPortCacheService,
+    cacheService: OperatorPortCache,
     request: WorkflowExecuteRequest,
     val executionStateStore: ExecutionStateStore,
     errorHandler: Throwable => Unit,
@@ -145,7 +180,7 @@ class WorkflowExecutionService(
   private def computeCachedOutputs(
       physicalPlan: org.apache.texera.amber.core.workflow.PhysicalPlan
   ): Map[GlobalPortIdentity, CachedOutput] = {
-    cacheService.lookupCachedOutputs(workflowContext.workflowId, physicalPlan)
+    cacheService.lookupCachedOutputs(workflowContext.workflowId, workflowContext.executionId, physicalPlan)
   }
 
   /**
@@ -177,24 +212,42 @@ class WorkflowExecutionService(
     * Compiles the workflow, prepares cache metadata, initializes execution services, and starts execution.
     */
   def executeWorkflow(): Unit = {
-    try {
-      workflow = new WorkflowCompiler(workflowContext)
-        .compile(request.logicalPlan)
-      val cachedOutputsByPort = computeCachedOutputs(workflow.physicalPlan)
-      val cachedOutputs = cachedOutputsByPort.map { case (gpid, cached) =>
-        gpid.serializeAsString -> cached
+    // The client (frontend / agent service) compiles the workflow against the
+    // workflow-compiling-service and sends the ready-to-run physical plan; the CU just runs it —
+    // no compilation, no authentication. The runtime does not need the logical plan (None).
+    val physicalPlan = request.physicalPlan
+    workflow = Workflow(workflowContext, None, physicalPlan)
+
+    // Result-storage planning is an execution-time concern that does not travel in the physical
+    // plan: mark the output ports of the to-view operators as needing storage. (Terminal sink
+    // ports are materialized by the schedule generator regardless of this set.)
+    val viewOutputPorts =
+      WorkflowExecutionService.outputPortsForViewResult(physicalPlan, request.opsToViewResult)
+
+    // Operator-port-result cache lookup against the client-supplied physical plan. Fingerprinting is
+    // pure/local; on the Postgres-free CU the lookup itself is routed to the dashboard over HTTP.
+    // Best-effort: a cache failure degrades to "no cache" and never fails the run.
+    val cachedOutputs: Map[String, CachedOutput] =
+      try {
+        val cachedOutputsByPort = computeCachedOutputs(workflow.physicalPlan)
+        val cacheUsageEntries = buildCacheUsageEntries(workflow.physicalPlan, cachedOutputsByPort)
+        executionStateStore.cacheUsageStore.updateState(_ =>
+          ExecutionCacheUsageStore(cacheUsageEntries)
+        )
+        cachedOutputsByPort.map { case (gpid, cached) => gpid.serializeAsString -> cached }
+      } catch {
+        case err: Throwable =>
+          logger.warn(
+            s"Operator-port-result cache lookup failed (continuing without cache): ${err.getMessage}"
+          )
+          Map.empty[String, CachedOutput]
       }
-      workflowContext.workflowSettings =
-        workflowContext.workflowSettings.copy(cachedOutputs = cachedOutputs)
-      val cacheUsageEntries =
-        buildCacheUsageEntries(workflow.physicalPlan, cachedOutputsByPort)
-      executionStateStore.cacheUsageStore.updateState(_ =>
-        ExecutionCacheUsageStore(cacheUsageEntries)
-      )
-    } catch {
-      case err: Throwable =>
-        errorHandler(err)
-    }
+
+    workflowContext.workflowSettings = workflowContext.workflowSettings.copy(
+      outputPortsNeedingStorage =
+        workflowContext.workflowSettings.outputPortsNeedingStorage ++ viewOutputPorts,
+      cachedOutputs = cachedOutputs
+    )
 
     client = ComputingUnitMaster.createAmberRuntime(
       workflow.context,

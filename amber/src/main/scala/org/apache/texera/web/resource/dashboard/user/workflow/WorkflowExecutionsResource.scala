@@ -28,6 +28,7 @@ import org.apache.texera.amber.core.storage.{
 }
 import org.apache.texera.amber.core.tuple.Tuple
 import org.apache.texera.amber.core.virtualidentity._
+import org.apache.texera.amber.config.ApplicationConfig
 import org.apache.texera.amber.core.workflow.{GlobalPortIdentity, PortIdentity, WorkflowContext}
 import org.apache.texera.amber.engine.architecture.logreplay.{ReplayDestination, ReplayLogRecord}
 import org.apache.texera.amber.engine.common.Utils.{maptoStatusCode, stringToAggregatedState}
@@ -44,14 +45,16 @@ import org.apache.texera.dao.jooq.generated.tables.daos.WorkflowExecutionsDao
 import org.apache.texera.dao.jooq.generated.tables.pojos.{WorkflowExecutions, User => UserPojo}
 import org.apache.texera.web.dao.OperatorPortCacheDao
 import org.apache.texera.web.model.http.request.result.ResultExportRequest
-import org.apache.texera.web.model.websocket.request.LogicalPlanPojo
+import org.apache.texera.amber.compiler.model.LogicalPlanPojo
 import org.apache.texera.web.resource.dashboard.user.workflow.WorkflowExecutionsResource._
 import org.apache.texera.web.service.{
   ExecutionsMetadataPersistService,
   OperatorPortCacheService,
+  RemoteExecutionMetadata,
   ResultExportService
 }
 import org.jooq.DSLContext
+import org.jooq.impl.DSL
 import play.api.libs.json.Json
 import org.apache.texera.workflow.WorkflowCompiler
 
@@ -77,6 +80,10 @@ object WorkflowExecutionsResource {
   }
 
   def getExpiredExecutionsWithResultOrLog(timeToLive: Int): List[WorkflowExecutions] = {
+    if (RemoteExecutionMetadata.enabled) {
+      // result/log cleanup is owned by the dashboard service in remote mode.
+      return List.empty
+    }
     val deadline = new Timestamp(
       System.currentTimeMillis() - TimeUnit.SECONDS.toMillis(timeToLive)
     )
@@ -101,7 +108,14 @@ object WorkflowExecutionsResource {
     * @param wid workflow id
     * @return Integer
     */
-  def getLatestExecutionID(wid: Integer, cuid: Integer): Option[Integer] = {
+  def getLatestExecutionID(
+      wid: Integer,
+      cuid: Integer,
+      userJwtToken: Option[String] = None
+  ): Option[Integer] = {
+    if (RemoteExecutionMetadata.enabled) {
+      return RemoteExecutionMetadata.getLatestExecutionId(wid, cuid, userJwtToken)
+    }
     val executions = context
       .select(WORKFLOW_EXECUTIONS.EID)
       .from(WORKFLOW_EXECUTIONS)
@@ -126,6 +140,10 @@ object WorkflowExecutionsResource {
     * @return list of execution ids
     */
   def getExecutionIDs(wid: Integer, cuid: Integer): List[Integer] = {
+    // On a Postgres-free computing unit (issue #5011) route over HTTP to the dashboard service.
+    if (RemoteExecutionMetadata.enabled) {
+      return RemoteExecutionMetadata.getExecutionIds(wid, cuid)
+    }
     context
       .select(WORKFLOW_EXECUTIONS.EID)
       .from(WORKFLOW_EXECUTIONS)
@@ -268,6 +286,23 @@ object WorkflowExecutionsResource {
       globalPortId: GlobalPortIdentity,
       uri: URI
   ): Unit = {
+    if (RemoteExecutionMetadata.enabled) {
+      RemoteExecutionMetadata.insertPortResultUri(
+        eid.id.toLong,
+        globalPortId.serializeAsString,
+        uri
+      )
+    } else {
+      insertOperatorPortResultUriSerialized(eid, globalPortId.serializeAsString, uri)
+    }
+  }
+
+  /** Inserts a port-result row using an already-serialized globalPortId, bypassing re-serialization. */
+  def insertOperatorPortResultUriSerialized(
+      eid: ExecutionIdentity,
+      globalPortIdSerialized: String,
+      uri: URI
+  ): Unit = {
     context
       .insertInto(OPERATOR_PORT_EXECUTIONS)
       .columns(
@@ -275,7 +310,7 @@ object WorkflowExecutionsResource {
         OPERATOR_PORT_EXECUTIONS.GLOBAL_PORT_ID,
         OPERATOR_PORT_EXECUTIONS.RESULT_URI
       )
-      .values(eid.id.toInt, globalPortId.serializeAsString, uri.toString)
+      .values(eid.id.toInt, globalPortIdSerialized, uri.toString)
       .execute()
   }
 
@@ -284,6 +319,9 @@ object WorkflowExecutionsResource {
       opId: String,
       uri: URI
   ): Unit = {
+    if (RemoteExecutionMetadata.enabled) {
+      return RemoteExecutionMetadata.insertOperatorConsoleUri(eid, opId, uri)
+    }
     context
       .insertInto(OPERATOR_EXECUTIONS)
       .columns(
@@ -296,6 +334,9 @@ object WorkflowExecutionsResource {
   }
 
   def updateRuntimeStatsUri(wid: Long, eid: Long, uri: URI): Unit = {
+    if (RemoteExecutionMetadata.enabled) {
+      return RemoteExecutionMetadata.updateRuntimeStatsUri(wid, eid, uri)
+    }
     context
       .update(WORKFLOW_EXECUTIONS)
       .set(WORKFLOW_EXECUTIONS.RUNTIME_STATS_URI, uri.toString)
@@ -314,7 +355,40 @@ object WorkflowExecutionsResource {
       .execute()
   }
 
+  /**
+    * The terminal execution status codes (COMPLETED, FAILED, KILLED) — once a row reaches any of
+    * these it is final and must never move again. Kept in sync with [[maptoStatusCode]].
+    */
+  private val terminalStatusCodes: Set[Short] = Set(3, 4, 5)
+
+  /**
+    * Persist an execution's status, atomically and monotonically, in a single statement.
+    *
+    * The `STATUS NOT IN (terminal)` guard makes terminal states absorbing at the row level under
+    * Postgres's own row lock: once an execution is COMPLETED/FAILED/KILLED, no later write — a late
+    * or duplicate RUNNING from a racing controller thread, a retried flush, or a node-failure FAILED
+    * arriving after a clean COMPLETED — can move it. This is the no-regression guarantee, and it does
+    * not depend on any ordering of the (multi-threaded, unguarded) state-update callbacks on the CU.
+    * It also makes every write idempotent, which is what lets the terminal flush be retried safely.
+    *
+    * `LAST_UPDATE_TIME` is stamped from the database clock so the staleness math in
+    * [[getWorkflowExecutions]] is immune to CU/dashboard clock skew. Runs only where Postgres lives
+    * (the dashboard service); the CU routes here over HTTP via [[RemoteExecutionMetadata]].
+    */
+  def updateExecutionStatus(eid: Long, statusCode: Short): Unit = {
+    context
+      .update(WORKFLOW_EXECUTIONS)
+      .set(WORKFLOW_EXECUTIONS.STATUS, Short.box(statusCode))
+      .set(WORKFLOW_EXECUTIONS.LAST_UPDATE_TIME, DSL.currentTimestamp())
+      .where(WORKFLOW_EXECUTIONS.EID.eq(eid.toInt))
+      .and(WORKFLOW_EXECUTIONS.STATUS.notIn(terminalStatusCodes.map(Short.box).asJava))
+      .execute()
+  }
+
   def getResultUrisByExecutionId(eid: ExecutionIdentity): List[URI] = {
+    if (RemoteExecutionMetadata.enabled) {
+      return RemoteExecutionMetadata.getResultUrisByExecutionId(eid.id.toLong)
+    }
     context
       .select(OPERATOR_PORT_EXECUTIONS.RESULT_URI)
       .from(OPERATOR_PORT_EXECUTIONS)
@@ -327,25 +401,29 @@ object WorkflowExecutionsResource {
   }
 
   def getConsoleMessagesUriByExecutionId(eid: ExecutionIdentity): List[URI] =
-    context
-      .select(OPERATOR_EXECUTIONS.CONSOLE_MESSAGES_URI)
-      .from(OPERATOR_EXECUTIONS)
-      .where(OPERATOR_EXECUTIONS.WORKFLOW_EXECUTION_ID.eq(eid.id.toInt))
-      .fetchInto(classOf[String])
-      .asScala
-      .toList
-      .filter(uri => uri != null && uri.nonEmpty)
-      .map(URI.create)
+    if (RemoteExecutionMetadata.enabled) List.empty
+    else
+      context
+        .select(OPERATOR_EXECUTIONS.CONSOLE_MESSAGES_URI)
+        .from(OPERATOR_EXECUTIONS)
+        .where(OPERATOR_EXECUTIONS.WORKFLOW_EXECUTION_ID.eq(eid.id.toInt))
+        .fetchInto(classOf[String])
+        .asScala
+        .toList
+        .filter(uri => uri != null && uri.nonEmpty)
+        .map(URI.create)
 
   def getRuntimeStatsUriByExecutionId(eid: ExecutionIdentity): Option[URI] =
-    Option(
-      context
-        .select(WORKFLOW_EXECUTIONS.RUNTIME_STATS_URI)
-        .from(WORKFLOW_EXECUTIONS)
-        .where(WORKFLOW_EXECUTIONS.EID.eq(eid.id.toInt))
-        .fetchOneInto(classOf[String])
-    ).filter(_.nonEmpty)
-      .map(URI.create)
+    if (RemoteExecutionMetadata.enabled) None
+    else
+      Option(
+        context
+          .select(WORKFLOW_EXECUTIONS.RUNTIME_STATS_URI)
+          .from(WORKFLOW_EXECUTIONS)
+          .where(WORKFLOW_EXECUTIONS.EID.eq(eid.id.toInt))
+          .fetchOneInto(classOf[String])
+      ).filter(_.nonEmpty)
+        .map(URI.create)
 
   def getWorkflowExecutions(
       wid: Integer,
@@ -358,6 +436,31 @@ object WorkflowExecutionsResource {
       condition = condition.and(
         WORKFLOW_EXECUTIONS.STATUS.in(statusCodes.map(Byte.box).asJava)
       )
+    }
+
+    // Lazy on-read reconciliation: when this query asks ONLY for non-terminal statuses — i.e. it is
+    // the "is there an ongoing execution?" check that locks workflow editing — drop rows that have
+    // gone stale. A running execution heartbeats its status (see ExecutionStatsService), so a live
+    // run keeps a fresh LAST_UPDATE_TIME; a row that has not been updated within the staleness window
+    // belongs to a computing unit that died without flushing a terminal status, and must not lock the
+    // workflow forever. Terminal and full-history queries are unaffected.
+    if (statusCodes.nonEmpty && statusCodes.subsetOf(Set[Byte](0, 1, 2))) {
+      val deadline = new Timestamp(
+        System.currentTimeMillis() - TimeUnit.SECONDS.toMillis(
+          ApplicationConfig.executionOngoingStaleAfterSeconds
+        )
+      )
+      // Keep only rows still "fresh": updated within the window, or — if never updated yet —
+      // started within it. Expressed in positive form on purpose: the negation form
+      // NOT(stale) evaluates to SQL NULL for a row whose LAST_UPDATE_TIME is null and would
+      // silently drop a just-started run before its first status write lands.
+      val fresh = WORKFLOW_EXECUTIONS.LAST_UPDATE_TIME
+        .ge(deadline)
+        .or(
+          WORKFLOW_EXECUTIONS.LAST_UPDATE_TIME.isNull
+            .and(WORKFLOW_EXECUTIONS.STARTING_TIME.ge(deadline))
+        )
+      condition = condition.and(fresh)
     }
 
     context
@@ -388,6 +491,9 @@ object WorkflowExecutionsResource {
   }
 
   def deleteConsoleMessageAndExecutionResultUris(eid: ExecutionIdentity): Unit = {
+    if (RemoteExecutionMetadata.enabled) {
+      return
+    }
     context
       .delete(OPERATOR_PORT_EXECUTIONS)
       .where(OPERATOR_PORT_EXECUTIONS.WORKFLOW_EXECUTION_ID.eq(eid.id.toInt))
@@ -455,6 +561,11 @@ object WorkflowExecutionsResource {
       globalPortId: GlobalPortIdentity,
       size: Long
   ): Unit = {
+    if (RemoteExecutionMetadata.enabled) {
+      // no-op: result-size tracking (a quota/display concern) is owned by the dashboard service in
+      // remote mode; the DB-less computing unit does not persist it.
+      return
+    }
     context
       .update(OPERATOR_PORT_EXECUTIONS)
       .set(OPERATOR_PORT_EXECUTIONS.RESULT_SIZE, Integer.valueOf(size.toInt))
@@ -469,6 +580,9 @@ object WorkflowExecutionsResource {
     * @param eid Execution ID associated with the runtime statistics document.
     */
   def updateRuntimeStatsSize(eid: ExecutionIdentity): Unit = {
+    if (RemoteExecutionMetadata.enabled) {
+      return // see updateResultSize: size tracking is owned by the dashboard in remote mode.
+    }
     val statsUriOpt = context
       .select(WORKFLOW_EXECUTIONS.RUNTIME_STATS_URI)
       .from(WORKFLOW_EXECUTIONS)
@@ -493,6 +607,9 @@ object WorkflowExecutionsResource {
     * @param opId Operator ID of the corresponding operator.
     */
   def updateConsoleMessageSize(eid: ExecutionIdentity, opId: OperatorIdentity): Unit = {
+    if (RemoteExecutionMetadata.enabled) {
+      return // see updateResultSize: size tracking is owned by the dashboard in remote mode.
+    }
     val uriOpt = context
       .select(OPERATOR_EXECUTIONS.CONSOLE_MESSAGES_URI)
       .from(OPERATOR_EXECUTIONS)
@@ -523,6 +640,14 @@ object WorkflowExecutionsResource {
       opId: OperatorIdentity,
       portId: PortIdentity
   ): Option[URI] = {
+    if (RemoteExecutionMetadata.enabled) {
+      return RemoteExecutionMetadata.getResultUri(
+        eid.id.toLong,
+        opId.id,
+        portId.id,
+        portId.internal
+      )
+    }
     def isMatchingExternalPortURI(uri: URI): Boolean = {
       val (_, _, globalPortIdOption, resourceType) = VFSURIFactory.decodeURI(uri)
       globalPortIdOption.exists { globalPortId =>
@@ -553,6 +678,11 @@ object WorkflowExecutionsResource {
       eid: ExecutionIdentity,
       globalPortId: GlobalPortIdentity
   ): Option[URI] = {
+    // Called from the engine's PortCompletedHandler (on the computing unit) when a materialized
+    // output port completes. On a Postgres-free CU (issue #5011) route over HTTP to the dashboard.
+    if (RemoteExecutionMetadata.enabled) {
+      return RemoteExecutionMetadata.getResultUriByGlobalPortId(eid.id, globalPortId.serializeAsString)
+    }
     context
       .select(OPERATOR_PORT_EXECUTIONS.RESULT_URI)
       .from(OPERATOR_PORT_EXECUTIONS)

@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ESNext", "DOM"],
+    "types": ["bun-types"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "noEmit": true
+  },
+  "include": [
+    "src/index.ts",
+    "src/**/*.test.ts",
+    "src/modules/**/*.ts",
+    "src/types/**/*.ts",
+    "src/utils/api-clients/**/*.ts",
+    "src/utils/cache/**/*.ts",
+    "src/utils/feature-flags.ts",
+    "src/utils/tool-definitions.ts",
+    "src/utils/validation/**/*.ts"
+  ],
+  "exclude": ["node_modules", "dist"]
+}

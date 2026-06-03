@@ -21,6 +21,7 @@ package org.apache.texera.amber.core.storage.model
 
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.texera.amber.config.EnvironmentalVariable
+import org.apache.texera.amber.core.storage.UserJwtTokenProvider
 import org.apache.texera.amber.core.storage.model.DatasetFileDocument.{
   fileServiceGetPresignURLEndpoint,
   fileServiceListDirectoryObjectsEndpoint,
@@ -37,11 +38,10 @@ import java.util.zip.{ZipEntry, ZipOutputStream}
 import scala.jdk.CollectionConverters.IteratorHasAsScala
 
 object DatasetFileDocument {
-  // Since requests need to be sent to the FileService in order to read the file, we store USER_JWT_TOKEN in the environment vars
-  // This variable should be NON-EMPTY in the dynamic-computing-unit architecture, i.e. each user-created computing unit should store user's jwt token.
-  // In the local development or other architectures, this token can be empty.
-  lazy val userJwtToken: String =
-    sys.env.getOrElse(EnvironmentalVariable.ENV_USER_JWT_TOKEN, "").trim
+  // The JWT presented to the FileService to read a file. It is the issuing user's per-execution
+  // token, bound to the worker's DP thread (see UserJwtTokenProvider); it falls back to the
+  // USER_JWT_TOKEN environment variable, and may be empty in local dev / non-CU setups.
+  def userJwtToken: String = UserJwtTokenProvider.currentToken
 
   // The endpoint of getting presigned url from the file service, also stored in the environment vars.
   lazy val fileServiceGetPresignURLEndpoint: String =

@@ -31,6 +31,25 @@ export function createErrorResult(error: string): string {
   return `[ERROR] ${error}`;
 }
 
+const TRUNCATED_SUFFIX = "\n...[truncated]";
+
+function isValidLimit(maxChars: number | undefined): maxChars is number {
+  return maxChars !== undefined && Number.isFinite(maxChars) && maxChars >= 0;
+}
+
+export function limitResolvedText(text: string, maxChars?: number): string {
+  if (!isValidLimit(maxChars) || text.length <= maxChars) {
+    return text;
+  }
+  if (maxChars === 0) {
+    return "";
+  }
+  if (maxChars <= TRUNCATED_SUFFIX.length) {
+    return text.slice(0, maxChars);
+  }
+  return `${text.slice(0, maxChars - TRUNCATED_SUFFIX.length)}${TRUNCATED_SUFFIX}`;
+}
+
 function formatLinkDescription(sourceOperatorId: string, targetOperatorId: string): string {
   return `${sourceOperatorId} --> ${targetOperatorId}`;
 }

@@ -55,7 +55,6 @@ export class DashboardEntry {
   likeCount: number;
   isLiked: boolean;
   accessibleUserIds: number[];
-  coverImageUrl?: string;
 
   constructor(
     public value:
@@ -137,7 +136,6 @@ export class DashboardEntry {
       this.likeCount = 0;
       this.isLiked = false;
       this.accessibleUserIds = [];
-      this.coverImageUrl = value.dataset.coverImage;
     } else if (isDashboardWorkflowComputingUnit(value)) {
       this.type = EntityType.ComputingUnit;
       this.id = value.computingUnit.cuid;

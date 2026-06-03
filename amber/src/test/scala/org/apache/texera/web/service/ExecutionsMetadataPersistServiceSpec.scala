@@ -19,11 +19,13 @@
 
 package org.apache.texera.web.service
 
+import org.apache.texera.amber.config.ApplicationConfig
 import org.apache.texera.amber.core.virtualidentity.{ExecutionIdentity, WorkflowIdentity}
 import org.apache.texera.amber.engine.architecture.rpc.controlreturns.WorkflowAggregatedState
 import org.apache.texera.amber.engine.common.Utils.maptoStatusCode
 import org.apache.texera.amber.engine.common.executionruntimestate.ExecutionMetadataStore
 import org.apache.texera.dao.MockTexeraDB
+import org.apache.texera.web.resource.dashboard.user.workflow.WorkflowExecutionsResource
 import org.apache.texera.dao.jooq.generated.Tables._
 import org.apache.texera.dao.jooq.generated.tables.daos.{
   UserDao,
@@ -271,10 +273,10 @@ class ExecutionsMetadataPersistServiceSpec
 
   // -- ExecutionStateStore.updateWorkflowState --------------------------------
   //
-  // updateWorkflowState wraps tryUpdateExistingExecution to also bump the
-  // in-memory ExecutionMetadataStore's `state`. Exercising it here keeps the
-  // DB-backed setup (workflow/version/execution rows) in one place; the
-  // pure-logic ExecutionStateStoreSpec sibling has no DB dependency.
+  // updateWorkflowState routes the status through the single chokepoint
+  // ExecutionsMetadataPersistService.updateExecutionStatus (DB-direct here,
+  // HTTP on a Postgres-free CU) and bumps the in-memory ExecutionMetadataStore's
+  // `state`. Exercising it here keeps the DB-backed setup in one place.
 
   "ExecutionStateStore.updateWorkflowState" should "set status via maptoStatusCode and return the metadata store with new state" in {
     val eid = seedExecution(status = 0)
@@ -290,9 +292,8 @@ class ExecutionsMetadataPersistServiceSpec
 
     val after = workflowExecutionsDao.fetchOneByEid(eid)
     after.getStatus shouldBe maptoStatusCode(WorkflowAggregatedState.COMPLETED)
-    // lastUpdateTime is set unconditionally to System.currentTimeMillis().
-    // Asserting it advanced past the seeded null/older value catches a
-    // regression that drops the setLastUpdateTime call.
+    // last_update_time is stamped server-side (DSL.currentTimestamp()). Asserting it advanced past
+    // the seeded null/older value catches a regression that drops the timestamp bump.
     Option(beforeTs) match {
       case Some(t) => after.getLastUpdateTime.getTime should be >= t.getTime
       case None    => after.getLastUpdateTime should not be null
@@ -300,11 +301,9 @@ class ExecutionsMetadataPersistServiceSpec
   }
 
   it should "still return a metadataStore with the new state when the eid is unknown" in {
-    // updateWorkflowState first calls tryUpdateExistingExecution (which
-    // silently swallows the unknown-eid error) and then unconditionally
-    // returns metadataStore.withState(state). Document this so a future
-    // refactor that makes the failure surface (e.g. via Try / Either) has
-    // a spec to migrate.
+    // updateWorkflowState routes through updateExecutionStatus (whose conditional UPDATE matches no
+    // row for an unknown eid and is a silent no-op) and then unconditionally returns
+    // metadataStore.withState(state).
     val store = ExecutionMetadataStore(
       state = WorkflowAggregatedState.UNINITIALIZED,
       executionId = ExecutionIdentity(-1L)
@@ -312,5 +311,99 @@ class ExecutionsMetadataPersistServiceSpec
     val updated =
       ExecutionStateStore.updateWorkflowState(WorkflowAggregatedState.FAILED, store)
     updated.state shouldBe WorkflowAggregatedState.FAILED
+  }
+
+  it should "NOT persist a status for an unmapped (transient) state such as PAUSING" in {
+    // PAUSING/RESUMING/UNKNOWN/TERMINATED map to -1, which must never reach the NOT-NULL status
+    // column. updateWorkflowState skips the persistence entirely yet still advances in-memory state.
+    val eid = seedExecution(status = 1) // RUNNING
+    val store = ExecutionMetadataStore(
+      state = WorkflowAggregatedState.RUNNING,
+      executionId = ExecutionIdentity(eid.longValue())
+    )
+    val updated =
+      ExecutionStateStore.updateWorkflowState(WorkflowAggregatedState.PAUSING, store)
+    updated.state shouldBe WorkflowAggregatedState.PAUSING
+    // The row's status is untouched (still RUNNING), not corrupted to -1.
+    workflowExecutionsDao.fetchOneByEid(eid).getStatus shouldBe 1.toByte
+  }
+
+  // -- updateExecutionStatus: atomic, terminal-monotonic ----------------------
+
+  "updateExecutionStatus" should "advance a non-terminal status and bump last_update_time" in {
+    val eid = seedExecution(status = 0)
+    ExecutionsMetadataPersistService.updateExecutionStatus(ExecutionIdentity(eid.longValue()), 1)
+    val after = workflowExecutionsDao.fetchOneByEid(eid)
+    after.getStatus shouldBe 1.toByte
+    after.getLastUpdateTime should not be null
+  }
+
+  it should "make terminal states absorbing: a later RUNNING cannot regress COMPLETED" in {
+    val eid = seedExecution(status = 1) // RUNNING
+    val id = ExecutionIdentity(eid.longValue())
+    ExecutionsMetadataPersistService.updateExecutionStatus(id, 3) // COMPLETED
+    workflowExecutionsDao.fetchOneByEid(eid).getStatus shouldBe 3.toByte
+    // A late/duplicate RUNNING (e.g. a racing controller callback) must be a no-op.
+    ExecutionsMetadataPersistService.updateExecutionStatus(id, 1)
+    workflowExecutionsDao.fetchOneByEid(eid).getStatus shouldBe 3.toByte
+  }
+
+  it should "keep the first terminal status (terminal-vs-terminal first-writer-wins)" in {
+    val eid = seedExecution(status = 1)
+    val id = ExecutionIdentity(eid.longValue())
+    ExecutionsMetadataPersistService.updateExecutionStatus(id, 3) // COMPLETED
+    // A node-failure FAILED arriving after a clean COMPLETED must not relabel the finished run.
+    ExecutionsMetadataPersistService.updateExecutionStatus(id, 4) // FAILED
+    workflowExecutionsDao.fetchOneByEid(eid).getStatus shouldBe 3.toByte
+  }
+
+  // -- lazy on-read staleness in getWorkflowExecutions ------------------------
+
+  private def setLastUpdate(eid: Integer, millisAgo: Long): Unit = {
+    getDSLContext
+      .update(WORKFLOW_EXECUTIONS)
+      .set(
+        WORKFLOW_EXECUTIONS.LAST_UPDATE_TIME,
+        new Timestamp(System.currentTimeMillis() - millisAgo)
+      )
+      .where(WORKFLOW_EXECUTIONS.EID.eq(eid))
+      .execute()
+  }
+
+  private def ongoingEids(): Set[Integer] =
+    WorkflowExecutionsResource
+      .getWorkflowExecutions(testWid, getDSLContext, Set[Byte](0, 1))
+      .map(_.eId)
+      .toSet
+
+  "getWorkflowExecutions (ongoing query)" should "return a freshly-updated running execution" in {
+    val eid = seedExecution(status = 1)
+    setLastUpdate(eid, 0L)
+    ongoingEids() should contain(eid)
+  }
+
+  it should "exclude a running execution whose last_update_time is stale (CU presumed dead)" in {
+    val eid = seedExecution(status = 1)
+    val staleMs = (ApplicationConfig.executionOngoingStaleAfterSeconds + 60).toLong * 1000L
+    setLastUpdate(eid, staleMs)
+    ongoingEids() should not contain eid
+  }
+
+  it should "include a just-started running execution whose last_update_time is still null" in {
+    // seedExecution leaves last_update_time null and starting_time = now: the positive 'fresh'
+    // predicate must keep it (the negation form would drop it on a SQL NULL).
+    val eid = seedExecution(status = 1)
+    ongoingEids() should contain(eid)
+  }
+
+  it should "NOT apply the staleness filter to a terminal-status query" in {
+    val eid = seedExecution(status = 3) // COMPLETED
+    val staleMs = (ApplicationConfig.executionOngoingStaleAfterSeconds + 60).toLong * 1000L
+    setLastUpdate(eid, staleMs)
+    val terminal = WorkflowExecutionsResource
+      .getWorkflowExecutions(testWid, getDSLContext, Set[Byte](3))
+      .map(_.eId)
+      .toSet
+    terminal should contain(eid)
   }
 }

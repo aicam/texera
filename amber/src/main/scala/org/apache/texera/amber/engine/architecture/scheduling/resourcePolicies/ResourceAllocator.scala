@@ -40,7 +40,8 @@ class DefaultResourceAllocator(
     physicalPlan: PhysicalPlan,
     executionClusterInfo: ExecutionClusterInfo,
     workflowSettings: WorkflowSettings,
-    cuid: Option[Int] = None
+    cuid: Option[Int] = None,
+    userJwtToken: Option[String] = None
 ) extends ResourceAllocator {
 
   // a map of a physical link to the partition info of the upstream/downstream of this link
@@ -69,7 +70,9 @@ class DefaultResourceAllocator(
   ): (ResourceConfig, Double) = {
 
     val opToOperatorConfigMapping = region.getOperators
-      .map(physicalOp => physicalOp.id -> OperatorConfig(generateWorkerConfigs(physicalOp, cuid)))
+      .map(physicalOp =>
+        physicalOp.id -> OperatorConfig(generateWorkerConfigs(physicalOp, cuid, userJwtToken))
+      )
       .toMap
 
     operatorConfigs ++= opToOperatorConfigMapping

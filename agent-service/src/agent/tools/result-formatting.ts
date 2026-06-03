@@ -19,11 +19,16 @@
 
 import type { OperatorInfo } from "../../types/execution";
 import type { WorkflowState } from "../workflow-state";
-import { formatExecuteOperatorResult, getVisibleResultHeaders } from "./tools-utility";
+import { formatExecuteOperatorResult, getVisibleResultHeaders, limitResolvedText } from "./tools-utility";
 
-export function formatOperatorResult(operatorId: string, opInfo: OperatorInfo, workflowState: WorkflowState): string {
+export function formatOperatorResult(
+  operatorId: string,
+  opInfo: OperatorInfo,
+  workflowState: WorkflowState,
+  maxResultCharLimit?: number
+): string {
   if (opInfo.error) {
-    return `[ERROR] ${opInfo.error}`;
+    return limitResolvedText(`[ERROR] ${opInfo.error}`, maxResultCharLimit);
   }
 
   if (!opInfo.result || !Array.isArray(opInfo.result)) {
@@ -58,7 +63,7 @@ export function formatOperatorResult(operatorId: string, opInfo: OperatorInfo, w
   ].filter(Boolean);
 
   const briefSummary = formatExecuteOperatorResult(operatorId);
-  return [briefSummary, ...metadataLines, dataString].filter(Boolean).join("\n");
+  return limitResolvedText([briefSummary, ...metadataLines, dataString].filter(Boolean).join("\n"), maxResultCharLimit);
 }
 
 function formatInputOutputMetadata(

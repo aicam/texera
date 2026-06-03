@@ -26,6 +26,7 @@ import {
   formatExecuteOperatorResult,
   formatOperatorError,
   getVisibleResultHeaders,
+  limitResolvedText,
 } from "./tools-utility";
 
 describe("getVisibleResultHeaders", () => {
@@ -79,6 +80,29 @@ describe("createErrorResult", () => {
 
   test("keeps the prefix even for empty error text", () => {
     expect(createErrorResult("")).toBe("[ERROR] ");
+  });
+});
+
+describe("limitResolvedText", () => {
+  test("returns text unchanged when it fits the limit", () => {
+    expect(limitResolvedText("hello", 5)).toBe("hello");
+  });
+
+  test("truncates long text and keeps the returned value within the limit", () => {
+    const out = limitResolvedText("abcdefghijklmnopqrstuvwxyz", 24);
+    expect(out.length).toBeLessThanOrEqual(24);
+    expect(out).toContain("...[truncated]");
+    expect(out).not.toContain("abcdefghijklmnopqrstuvwxyz");
+  });
+
+  test("returns an empty string for a zero limit", () => {
+    expect(limitResolvedText("hello", 0)).toBe("");
+  });
+
+  test("ignores invalid limits", () => {
+    expect(limitResolvedText("hello", undefined)).toBe("hello");
+    expect(limitResolvedText("hello", Number.POSITIVE_INFINITY)).toBe("hello");
+    expect(limitResolvedText("hello", -1)).toBe("hello");
   });
 });
 

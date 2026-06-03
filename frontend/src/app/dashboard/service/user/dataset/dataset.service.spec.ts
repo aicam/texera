@@ -41,7 +41,6 @@ function buildDataset(overrides: Partial<Dataset> = {}): Dataset {
     storagePath: undefined,
     description: "",
     creationTime: undefined,
-    coverImage: undefined,
     ...overrides,
   };
 }
@@ -339,7 +338,7 @@ describe("DatasetService", () => {
     req.flush({});
   });
 
-  // ─── retrieveOwners / updateDatasetCoverImage ─────────────────────────────
+  // ─── retrieveOwners ───────────────────────────────────────────────────────
 
   it("retrieveOwners GETs /dataset/user-dataset-owners", async () => {
     const pending = firstValueFrom(service.retrieveOwners());
@@ -347,10 +346,4 @@ describe("DatasetService", () => {
     expect(await pending).toEqual(["a", "b"]);
   });
 
-  it("updateDatasetCoverImage POSTs the cover image base64 to /dataset/{did}/update/cover", () => {
-    service.updateDatasetCoverImage(3, "data:image/png;base64,ZGF0YQ==").subscribe();
-    const req = http.expectOne(`${API}/dataset/3/update/cover`);
-    expect(req.request.body).toEqual({ coverImage: "data:image/png;base64,ZGF0YQ==" });
-    req.flush({});
-  });
 });

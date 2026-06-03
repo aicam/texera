@@ -48,7 +48,7 @@ import org.apache.texera.amber.engine.e2e.TestUtils.{
 import org.apache.texera.amber.operator.TestOperators
 import org.apache.texera.amber.operator.aggregate.AggregationFunction
 import org.apache.texera.web.resource.dashboard.user.workflow.WorkflowExecutionsResource.getResultUriByLogicalPortId
-import org.apache.texera.workflow.LogicalLink
+import org.apache.texera.amber.compiler.model.LogicalLink
 import org.scalatest.flatspec.AnyFlatSpecLike
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, Outcome, Retries}
 
@@ -119,7 +119,7 @@ class DataProcessingSpec
     client
       .registerCallback[ExecutionStateUpdate](evt => {
         if (evt.state == COMPLETED) {
-          results = workflow.logicalPlan.getTerminalOperatorIds
+          results = workflow.logicalPlan.get.getTerminalOperatorIds
             .filter(terminalOpId => {
               val uri = getResultUriByLogicalPortId(
                 workflowContext.executionId,

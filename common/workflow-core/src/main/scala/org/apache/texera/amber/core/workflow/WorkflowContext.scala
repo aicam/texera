@@ -35,5 +35,9 @@ class WorkflowContext(
     var workflowId: WorkflowIdentity = DEFAULT_WORKFLOW_ID,
     var executionId: ExecutionIdentity = DEFAULT_EXECUTION_ID,
     var workflowSettings: WorkflowSettings = DEFAULT_WORKFLOW_SETTINGS,
-    var cuid: Option[Int] = None
+    var cuid: Option[Int] = None,
+    // JWT of the user issuing this execution, supplied in the execute request. The computing unit
+    // forwards it on its outbound calls (execution-metadata HTTP, dataset access) so a shared,
+    // identity-free CU acts on behalf of the actual requester instead of a static embedded token.
+    var userJwtToken: Option[String] = None
 )

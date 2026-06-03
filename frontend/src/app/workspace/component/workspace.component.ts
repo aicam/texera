@@ -23,7 +23,6 @@ import {
   ChangeDetectorRef,
   Component,
   HostListener,
-  Input,
   OnDestroy,
   OnInit,
   ViewChild,
@@ -58,9 +57,9 @@ import { WorkflowEditorComponent } from "./workflow-editor/workflow-editor.compo
 import { MenuComponent } from "./menu/menu.component";
 import { MiniMapComponent } from "./workflow-editor/mini-map/mini-map.component";
 import { LeftPanelComponent } from "./left-panel/left-panel.component";
-import { AgentPanelComponent } from "./agent/agent-panel/agent-panel.component";
 import { PropertyEditorComponent } from "./property-editor/property-editor.component";
 import { FormlyRepeatDndComponent } from "../../common/formly/repeat-dnd/repeat-dnd.component";
+import { AgentFloatComponent } from "./agent/agent-float/agent-float.component";
 
 export const SAVE_DEBOUNCE_TIME_IN_MS = 5000;
 
@@ -81,9 +80,9 @@ export const SAVE_DEBOUNCE_TIME_IN_MS = 5000;
     MiniMapComponent,
     LeftPanelComponent,
     NgIf,
-    AgentPanelComponent,
     PropertyEditorComponent,
     FormlyRepeatDndComponent,
+    AgentFloatComponent,
   ],
 })
 export class WorkspaceComponent implements AfterViewInit, OnInit, OnDestroy {
@@ -91,13 +90,6 @@ export class WorkspaceComponent implements AfterViewInit, OnInit, OnDestroy {
   public writeAccess: boolean = false;
   public isLoading: boolean = false;
   @ViewChild("codeEditor", { read: ViewContainerRef }) codeEditorViewRef!: ViewContainerRef;
-
-  /**
-   * Optional agent ID to activate when the workspace loads.
-   * When provided (from agent dashboard), the agent panel will open
-   * and connect to this agent automatically.
-   */
-  @Input() agentIdToActivate?: string;
 
   /**
    * Flag to ensure auto persist is registered only once.  This prevents multiple
@@ -125,7 +117,6 @@ export class WorkspaceComponent implements AfterViewInit, OnInit, OnDestroy {
     private notificationService: NotificationService,
     private hubService: HubService,
     private codeEditorService: CodeEditorService,
-    private config: GuiConfigService,
     private changeDetectorRef: ChangeDetectorRef
   ) {}
 
@@ -325,7 +316,4 @@ export class WorkspaceComponent implements AfterViewInit, OnInit, OnDestroy {
     this.changeDetectorRef.detectChanges();
   }
 
-  public get copilotEnabled(): boolean {
-    return this.config.env.copilotEnabled;
-  }
 }

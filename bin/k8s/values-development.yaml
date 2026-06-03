@@ -237,6 +237,22 @@ agentService:
     # Authenticates the agent service to the in-cluster LLM gateway
     # (access-control-service / LiteLLM), not to the upstream provider.
     llmApiKey: "dummy"
+    mcpRequestTimeoutMs: 30000
+
+bioMcpService:
+  enabled: true
+  name: bio-mcp-service
+  numOfPods: 1
+  imageName: texera-bio-mcp-service
+  service:
+    type: ClusterIP
+    port: 3010
+  env:
+    apiKey: ""
+    omimApiKey: ""
+    enablePlaceholderTools: false
+    enableOmimPlaceholder: false
+    enableBlastPlaceholder: false
 
 litellm:
   enabled: true
@@ -356,6 +372,9 @@ texeraEnvVars:
     value: ""
   - name: USER_SYS_DOMAIN
     value: ""
+  - name: AUTH_JWT_SECRET
+    # Development-only default from auth.conf. Production environments MUST override this with a securely generated secret.
+    value: "8a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d"
 
 yWebsocketServer:
   name: y-websocket-server
@@ -393,6 +412,9 @@ metrics-server:
 
 gatewayConfig:
   # Routes are available at bin/k8s/templates/gateway-routes.yaml
+
+  https:
+    enabled: false
 
   # The hostname for the Gateway listener (HTTP/HTTPS).
   # e.g., "texera.example.com"

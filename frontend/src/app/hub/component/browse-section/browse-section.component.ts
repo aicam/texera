@@ -17,10 +17,9 @@
  * under the License.
  */
 
-import { ChangeDetectorRef, Component, Input, OnChanges, OnInit, SimpleChanges } from "@angular/core";
+import { Component, Input, OnChanges, OnInit, SimpleChanges } from "@angular/core";
 import { DashboardEntry } from "../../../dashboard/type/dashboard-entry";
 import { WorkflowPersistService } from "../../../common/service/workflow-persist/workflow-persist.service";
-import { DatasetService } from "../../../dashboard/service/user/dataset/dataset.service";
 import { UntilDestroy } from "@ngneat/until-destroy";
 import {
   DASHBOARD_HUB_DATASET_RESULT_DETAIL,
@@ -28,7 +27,6 @@ import {
   DASHBOARD_USER_DATASET,
   DASHBOARD_USER_WORKSPACE,
 } from "../../../app-routing.constant";
-import { AppSettings } from "../../../common/app-setting";
 import { NgIf, NgFor, NgStyle, DatePipe } from "@angular/common";
 import { NzCardComponent } from "ng-zorro-antd/card";
 import { RouterLink } from "@angular/router";
@@ -65,26 +63,18 @@ export class BrowseSectionComponent implements OnInit, OnChanges {
   protected readonly DASHBOARD_USER_DATASET = DASHBOARD_USER_DATASET;
   entityRoutes: { [key: number]: string[] } = {};
 
-  private coverImageUrls = new Map<number, string>();
-
-  constructor(
-    private workflowPersistService: WorkflowPersistService,
-    private datasetService: DatasetService,
-    private cdr: ChangeDetectorRef
-  ) {}
+  constructor(private workflowPersistService: WorkflowPersistService) {}
 
   ngOnInit(): void {
     this.entities.forEach(entity => {
       this.initializeEntry(entity);
     });
-    this.loadCoverImages();
   }
 
   ngOnChanges(changes: SimpleChanges): void {
     this.entities.forEach(entity => {
       this.initializeEntry(entity);
     });
-    this.loadCoverImages();
   }
 
   private initializeEntry(entity: DashboardEntry): void {
@@ -112,24 +102,7 @@ export class BrowseSectionComponent implements OnInit, OnChanges {
     }
   }
 
-  private loadCoverImages(): void {
-    if (!this.entities) return;
-
-    this.entities
-      .filter(
-        (entity): entity is DashboardEntry & { id: number } =>
-          entity.type === "dataset" &&
-          entity.coverImageUrl !== undefined &&
-          entity.id !== undefined &&
-          !this.coverImageUrls.has(entity.id)
-      )
-      .forEach(entity => {
-        const coverUrl = `${AppSettings.getApiEndpoint()}/dataset/${entity.id}/cover`;
-        this.coverImageUrls.set(entity.id, coverUrl);
-      });
-  }
-
-  getCoverImage(entity: DashboardEntry): string {
-    return this.coverImageUrls.get(entity.id!) || this.defaultBackground;
+  getCardImage(_entity: DashboardEntry): string {
+    return this.defaultBackground;
   }
 }

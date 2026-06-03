@@ -39,7 +39,8 @@ abstract class ScheduleGenerator(
       physicalPlan,
       executionClusterInfo,
       workflowContext.workflowSettings,
-      cuid = workflowContext.cuid
+      cuid = workflowContext.cuid,
+      userJwtToken = workflowContext.userJwtToken
     )
 
   def generate(): (Schedule, PhysicalPlan)

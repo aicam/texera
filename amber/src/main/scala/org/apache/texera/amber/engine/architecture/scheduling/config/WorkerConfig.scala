@@ -27,7 +27,8 @@ import org.apache.texera.amber.util.VirtualIdentityUtils
 case object WorkerConfig {
   def generateWorkerConfigs(
       physicalOp: PhysicalOp,
-      cuid: Option[Int] = None
+      cuid: Option[Int] = None,
+      userJwtToken: Option[String] = None
   ): List[WorkerConfig] = {
     val workerCount = if (physicalOp.parallelizable) {
       physicalOp.suggestedWorkerNum match {
@@ -45,7 +46,8 @@ case object WorkerConfig {
       WorkerConfig(
         VirtualIdentityUtils.createWorkerIdentity(physicalOp.workflowId, physicalOp.id, idx),
         pveName = physicalOp.pveName,
-        cuid = cuid
+        cuid = cuid,
+        userJwtToken = userJwtToken
       )
     )
   }
@@ -54,5 +56,8 @@ case object WorkerConfig {
 case class WorkerConfig(
     workerId: ActorVirtualIdentity,
     pveName: String = "",
-    cuid: Option[Int] = None
+    cuid: Option[Int] = None,
+    // JWT of the user that issued this execution; the worker forwards it on its outbound dataset
+    // calls (presign / path resolution) instead of using a static token (issue #5011).
+    userJwtToken: Option[String] = None
 )

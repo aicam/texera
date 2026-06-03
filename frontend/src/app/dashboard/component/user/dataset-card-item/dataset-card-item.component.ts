@@ -113,23 +113,7 @@ export class DatasetCardItemComponent implements OnChanges {
       this.entryLink = [DASHBOARD_HUB_DATASET_RESULT_DETAIL, String(did)];
     }
     this.disableDelete = !this.entry.dataset.isOwner;
-
     this.coverImageSrc = this.defaultCover;
-    if (this.entry.coverImageUrl) {
-      this.datasetService
-        .getDatasetCoverUrl(did)
-        .pipe(untilDestroyed(this))
-        .subscribe({
-          next: ({ url }) => {
-            this.coverImageSrc = url ?? this.defaultCover;
-            this.cdr.markForCheck();
-          },
-          error: () => {
-            this.coverImageSrc = this.defaultCover;
-            this.cdr.markForCheck();
-          },
-        });
-    }
   }
 
   onCoverError(event: Event): void {

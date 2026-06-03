@@ -137,6 +137,7 @@ lakefs:
 
 lakekeeper:
   enabled: true
+  helmWait: true
   postgresql:
     enabled: false
   internalOpenFGA: false
@@ -263,6 +264,22 @@ agentService:
     # Authenticates the agent service to the in-cluster LLM gateway
     # (access-control-service / LiteLLM), not to the upstream provider.
     llmApiKey: "dummy"
+    mcpRequestTimeoutMs: 30000
+
+bioMcpService:
+  enabled: true
+  name: bio-mcp-service
+  numOfPods: 1
+  imageName: texera-bio-mcp-service
+  service:
+    type: ClusterIP
+    port: 3010
+  env:
+    apiKey: ""
+    omimApiKey: ""
+    enablePlaceholderTools: false
+    enableOmimPlaceholder: false
+    enableBlastPlaceholder: false
 
 litellm:
   enabled: true
@@ -333,9 +350,9 @@ texeraEnvVars:
   - name: MAX_NUM_OF_RUNNING_COMPUTING_UNITS_PER_USER
     value: "10"
   - name: KUBERNETES_COMPUTING_UNIT_CPU_LIMIT_OPTIONS
-    value: "2"
+    value: "1,2"
   - name: KUBERNETES_COMPUTING_UNIT_MEMORY_LIMIT_OPTIONS
-    value: "2Gi"
+    value: "1Gi,2Gi"
   - name: KUBERNETES_COMPUTING_UNIT_GPU_LIMIT_OPTIONS
     value: "0"
   - name: COMPUTING_UNIT_LOCAL_ENABLED
@@ -462,6 +479,9 @@ cloudmapper:
 
 gatewayConfig:
   # Routes are available at bin/k8s/templates/gateway-routes.yaml
+
+  https:
+    enabled: true
 
   # The hostname for the Gateway listener (HTTP/HTTPS).
   # e.g., "texera.example.com"

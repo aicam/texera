@@ -36,6 +36,7 @@ import { NzModalService, NzModalComponent, NzModalContentDirective } from "ng-zo
 import { WorkflowExecutionsService } from "../../../dashboard/service/user/workflow-executions/workflow-executions.service";
 import { WorkflowExecutionsEntry } from "../../../dashboard/type/workflow-executions-entry";
 import { ExecutionState } from "../../types/execute-workflow.interface";
+import { ExecuteWorkflowService } from "../../service/execute-workflow/execute-workflow.service";
 import { ShareAccessComponent } from "../../../dashboard/component/user/share-access/share-access.component";
 import { GuiConfigService } from "../../../common/service/gui-config.service";
 import { ComputingUnitActionsService } from "../../../common/service/computing-unit/computing-unit-actions/computing-unit-actions.service";
@@ -254,6 +255,7 @@ export class ComputingUnitSelectionComponent implements OnInit {
     private computingUnitActionsService: ComputingUnitActionsService,
     private workflowWebsocketService: WorkflowWebsocketService,
     private workflowPveService: WorkflowPveService,
+    private executeWorkflowService: ExecuteWorkflowService,
     private ngZone: NgZone
   ) {}
 
@@ -321,6 +323,23 @@ export class ComputingUnitSelectionComponent implements OnInit {
       .pipe(untilDestroyed(this))
       .subscribe(units => {
         this.allComputingUnits = units;
+      });
+
+    // Lift/apply the modification lock live as the execution state changes within this session. The
+    // initial snapshot below (and on CU switch) is a single take(1) query; without this, an execution
+    // that completes mid-session would leave editing locked until a reload or CU switch. Mirrors the
+    // server-side "ongoing" definition: only Running/Initializing lock editing.
+    this.executeWorkflowService
+      .getExecutionStateStream()
+      .pipe(untilDestroyed(this))
+      .subscribe(({ current }) => {
+        const ongoing =
+          current.state === ExecutionState.Running || current.state === ExecutionState.Initializing;
+        if (ongoing) {
+          this.workflowActionService.disableWorkflowModification();
+        } else {
+          this.workflowActionService.enableWorkflowModification();
+        }
       });
 
     this.registerWorkflowMetadataSubscription();

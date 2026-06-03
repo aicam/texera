@@ -19,9 +19,7 @@
 
 import { Component } from "@angular/core";
 import { GuiConfigService } from "./common/service/gui-config.service";
-import { UntilDestroy } from "@ngneat/until-destroy";
 
-@UntilDestroy()
 @Component({
   selector: "texera-root",
   template: `

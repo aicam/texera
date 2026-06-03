@@ -29,8 +29,6 @@ import org.apache.texera.amber.engine.common.executionruntimestate.{
 }
 import org.apache.texera.web.service.ExecutionsMetadataPersistService
 
-import java.sql.Timestamp
-
 object ExecutionStateStore {
 
   // Update the state of the specified execution if user system is enabled.
@@ -39,10 +37,17 @@ object ExecutionStateStore {
       state: WorkflowAggregatedState,
       metadataStore: ExecutionMetadataStore
   ): ExecutionMetadataStore = {
-    ExecutionsMetadataPersistService.tryUpdateExistingExecution(metadataStore.executionId) {
-      execution =>
-        execution.setStatus(maptoStatusCode(state))
-        execution.setLastUpdateTime(new Timestamp(System.currentTimeMillis()))
+    // Persist only states that map to a real DB status code. Transient/unmapped states (PAUSING,
+    // RESUMING, UNKNOWN, TERMINATED) return -1 from maptoStatusCode and must NOT be written to the
+    // NOT-NULL status column; they are always followed by a mapped state (PAUSED/RUNNING), so the
+    // in-memory state machine still advances via withState below. last_update_time is stamped
+    // server-side (DB clock) by updateExecutionStatus.
+    val statusCode = maptoStatusCode(state)
+    if (statusCode >= 0) {
+      ExecutionsMetadataPersistService.updateExecutionStatus(
+        metadataStore.executionId,
+        statusCode.toShort
+      )
     }
     metadataStore.withState(state)
   }

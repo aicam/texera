@@ -42,7 +42,10 @@ export interface WorkflowCompilationResponse {
   operatorErrors: Record<string, WorkflowFatalError>;
 }
 
-export async function compileWorkflowAsync(logicalPlan: LogicalPlan): Promise<WorkflowCompilationResponse | null> {
+export async function compileWorkflowAsync(
+  logicalPlan: LogicalPlan,
+  userToken?: string
+): Promise<WorkflowCompilationResponse | null> {
   const config = getBackendConfig();
   const url = `${config.compileEndpoint}/api/compile`;
 
@@ -54,9 +57,12 @@ export async function compileWorkflowAsync(logicalPlan: LogicalPlan): Promise<Wo
   };
 
   try {
+    // The workflow-compiling-service authenticates the request, so forward the issuing user's JWT.
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (userToken) headers.Authorization = `Bearer ${userToken}`;
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(body),
     });
 

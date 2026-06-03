@@ -24,6 +24,7 @@ import type { WorkflowState } from "../workflow-state";
 import { getBackendConfig } from "../../api/backend-api";
 import { env } from "../../config/env";
 import type { LogicalPlan, LogicalLink } from "../../api/execution-api";
+import { compileWorkflowAsync } from "../../api/compile-api";
 import type { OperatorInfo, SyncExecutionResult } from "../../types/execution";
 import { WorkflowSystemMetadata } from "../util/workflow-system-metadata";
 import { DEFAULT_AGENT_SETTINGS } from "../../types/agent";
@@ -261,6 +262,24 @@ async function executeWorkflowHttp(
   const workflowId = config.workflowId;
   const computingUnitId = config.computingUnitId ?? 0;
 
+  // The Computing Unit runs a ready-to-execute PHYSICAL plan and does NOT compile (issue #5011).
+  // Compile the logical plan to a physical plan via the compiling-service first, then ship the
+  // physical plan; the CU materializes the requested operators' results via targetOperatorIds.
+  const compilation = await compileWorkflowAsync(logicalPlan, config.userToken);
+  if (!compilation || !compilation.physicalPlan) {
+    const compilationErrors: Record<string, string> = {};
+    for (const [opId, err] of Object.entries(compilation?.operatorErrors ?? {})) {
+      compilationErrors[opId] = err.message;
+    }
+    return {
+      success: false,
+      state: "CompilationFailed",
+      operators: {},
+      compilationErrors: Object.keys(compilationErrors).length > 0 ? compilationErrors : undefined,
+      errors: ["Failed to compile the workflow into a physical plan."],
+    };
+  }
+
   // In k8s each computing unit is a separate pod, so the endpoint varies per cuid.
   const executionEndpoint = env.EXECUTION_ENDPOINT_TEMPLATE
     ? env.EXECUTION_ENDPOINT_TEMPLATE.replace("{cuid}", String(computingUnitId))
@@ -272,19 +291,18 @@ async function executeWorkflowHttp(
     ? Math.ceil(config.executionTimeoutMs / 1000)
     : Math.ceil(DEFAULT_AGENT_SETTINGS.executionTimeoutMs / 1000);
 
+  // Body must match the CU's SyncExecutionRequest (physicalPlan, not logicalPlan). targetOperatorIds
+  // drives which operators' results the CU materializes and returns; userJwtToken is forwarded by
+  // the CU on its outbound calls (dataset reads, execution metadata).
   const request = {
     executionName: "agent-execution",
-    logicalPlan: {
-      operators: logicalPlan.operators,
-      links: logicalPlan.links,
-      opsToViewResult: logicalPlan.opsToViewResult || [],
-      opsToReuseResult: [],
-    },
+    physicalPlan: compilation.physicalPlan,
     targetOperatorIds: logicalPlan.opsToViewResult || [],
     timeoutSeconds,
     maxOperatorResultCharLimit: config.maxOperatorResultCharLimit ?? DEFAULT_AGENT_SETTINGS.maxOperatorResultCharLimit,
     maxOperatorResultCellCharLimit:
       config.maxOperatorResultCellCharLimit ?? DEFAULT_AGENT_SETTINGS.maxOperatorResultCellCharLimit,
+    userJwtToken: config.userToken,
   };
 
   log.debug(

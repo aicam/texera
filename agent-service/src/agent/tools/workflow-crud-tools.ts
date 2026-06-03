@@ -38,11 +38,6 @@ import {
 
 export interface ToolContext {
   metadataStore?: WorkflowSystemMetadata;
-  settings?: {
-    maxOperatorResultCharLimit?: number;
-    toolTimeoutMs?: number;
-    executionTimeoutMs?: number;
-  };
 }
 
 export const TOOL_NAME_ADD_OPERATOR = "addOperator";
@@ -65,7 +60,7 @@ export function createAddOperatorTool(
   const workflowUtil = context?.metadataStore ? new WorkflowUtilService(context.metadataStore, workflowState) : null;
 
   return tool({
-    description: `Add a new operator to the workflow. Use getOperatorSchema first to understand required properties.
+    description: `Add a new operator to the workflow. Use list_operator_types to find valid operator types, then get_operator_definition to understand required properties before setting them.
 
 Examples:
 1. Add a source operator (no inputs):
@@ -79,7 +74,7 @@ Examples:
         .describe(
           "Name of Operator. Use the format 'op' followed by an incrementing number starting from 1 (e.g., op1, op2, op3)."
         ),
-      operatorType: z.string().describe("The operator type (e.g., 'DataProcessing', 'Aggregate')"),
+      operatorType: z.string().describe("Exact operator type returned by list_operator_types"),
       properties: z.record(z.any()).describe("Properties to set on the operator"),
       inputOperatorIds: z
         .record(z.array(z.string()))
@@ -206,7 +201,7 @@ Examples:
 
 export function createModifyOperatorTool(workflowState: WorkflowState, context?: ToolContext) {
   return tool({
-    description: `Modify an existing operator's properties, input links, or both.
+    description: `Modify an existing operator's properties, input links, or both. Use get_operator_definition first when changing properties so updates match the operator's definition.
 
 Examples:
 1. Modify properties only:

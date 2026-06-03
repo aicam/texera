@@ -135,6 +135,19 @@ describe("formatOperatorResult - table shape and metadata", () => {
     expect(lines[2]).toBe("truncated to 1 row");
     expect(lines[3]).toBe("something else");
   });
+
+  test("limits formatted operator result when a char limit is provided", () => {
+    const out = formatOperatorResult(
+      "op1",
+      makeOpInfo({ outputTuples: 1, result: [{ a: "abcdefghijklmnopqrstuvwxyz" }] }),
+      EMPTY_STATE,
+      48
+    );
+
+    expect(out.length).toBeLessThanOrEqual(48);
+    expect(out).toContain("...[truncated]");
+    expect(out).not.toContain("abcdefghijklmnopqrstuvwxyz");
+  });
 });
 
 describe("formatOperatorResult - input port metadata", () => {

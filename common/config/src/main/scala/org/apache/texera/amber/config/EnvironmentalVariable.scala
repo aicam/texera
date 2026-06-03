@@ -40,6 +40,16 @@ object EnvironmentalVariable {
     "FILE_SERVICE_UPLOAD_ONE_FILE_TO_DATASET_ENDPOINT"
   val ENV_FILE_SERVICE_LIST_DIRECTORY_OBJECTS_ENDPOINT =
     "FILE_SERVICE_LIST_DIRECTORY_OBJECTS_ENDPOINT"
+  // Endpoint that resolves a dataset path to its dataset:/// URI, so a computing unit can
+  // resolve datasets without holding Postgres credentials (issue #5011).
+  val ENV_FILE_SERVICE_RESOLVE_PATH_ENDPOINT = "FILE_SERVICE_RESOLVE_PATH_ENDPOINT"
+
+  /**
+    * Dashboard Service endpoint. A computing unit holds no Postgres credentials (issue #5011) and
+    * routes execution-metadata operations (create/status/result-URIs) here over HTTP.
+    */
+  val ENV_DASHBOARD_SERVICE_EXECUTION_METADATA_ENDPOINT =
+    "DASHBOARD_SERVICE_EXECUTION_METADATA_ENDPOINT"
 
   /**
     * Auth related vars

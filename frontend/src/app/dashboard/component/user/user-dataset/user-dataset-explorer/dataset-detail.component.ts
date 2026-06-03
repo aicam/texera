@@ -119,7 +119,6 @@ export class DatasetDetailComponent implements OnInit {
   public datasetCreationTime: string = "";
   public datasetCreationTimeTooltip: string = "";
   public datasetIsPublic: boolean = false;
-  public coverImageUrl: string | null = null;
   public datasetIsDownloadable: boolean = true;
   public userDatasetAccessLevel: "READ" | "WRITE" | "NONE" = "NONE";
   public ownerEmail: string = "";
@@ -343,17 +342,6 @@ export class DatasetDetailComponent implements OnInit {
           this.datasetIsDownloadable = dataset.isDownloadable;
           this.ownerEmail = dashboardDataset.ownerEmail;
           this.isOwner = dashboardDataset.isOwner;
-          if (dataset.coverImage) {
-            this.datasetService
-              .getDatasetCoverUrl(did)
-              .pipe(untilDestroyed(this))
-              .subscribe({
-                next: ({ url }) => (this.coverImageUrl = url),
-                error: () => (this.coverImageUrl = null),
-              });
-          } else {
-            this.coverImageUrl = null;
-          }
           if (typeof dataset.creationTime === "number") {
             const date = new Date(dataset.creationTime);
             this.datasetCreationTime = format(date, "MM/dd/yyyy HH:mm:ss");
@@ -777,37 +765,6 @@ export class DatasetDetailComponent implements OnInit {
 
   changeViewDisplayStyle() {
     this.displayPreciseViewCount = !this.displayPreciseViewCount;
-  }
-
-  onSetCoverImage(filePath: string): void {
-    if (!this.did || !this.selectedVersion) {
-      return;
-    }
-    const did = this.did;
-
-    const newCoverPath = `${this.selectedVersion.name}/${filePath}`;
-    this.datasetService
-      .updateDatasetCoverImage(did, newCoverPath)
-      .pipe(untilDestroyed(this))
-      .subscribe({
-        next: () => {
-          this.datasetService
-            .getDatasetCoverUrl(did)
-            .pipe(untilDestroyed(this))
-            .subscribe({
-              next: ({ url }) => (this.coverImageUrl = url),
-              error: () => (this.coverImageUrl = null),
-            });
-          this.notificationService.success("Cover image updated.");
-        },
-        error: (err: unknown) => {
-          this.notificationService.error(
-            err instanceof HttpErrorResponse
-              ? err.error?.message || "Failed to set cover image"
-              : "Failed to set cover image"
-          );
-        },
-      });
   }
 
   onDatasetDescriptionChange(description: string): void {

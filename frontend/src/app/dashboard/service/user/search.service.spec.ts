@@ -103,7 +103,6 @@ function makeDatasetItem(did: number, ownerUid: number): SearchResultItem {
       storagePath: undefined,
       description: "",
       creationTime: 0,
-      coverImage: undefined,
     },
   };
   return { resourceType: "dataset", dataset };

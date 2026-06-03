@@ -29,10 +29,10 @@ import {
   TexeraWebsocketRequestTypes,
 } from "../../types/workflow-websocket.interface";
 import { delayWhen, filter, map, retryWhen, tap } from "rxjs/operators";
-import { AuthService } from "../../../common/service/user/auth.service";
 import { getWebsocketUrl } from "src/app/common/util/url";
 import { isDefined } from "../../../common/util/predicate";
 import { GuiConfigService } from "../../../common/service/gui-config.service";
+import { AuthService } from "../../../common/service/user/auth.service";
 
 export const WS_HEARTBEAT_INTERVAL_MS = 10000;
 export const WS_RECONNECT_INTERVAL_MS = 3000;
@@ -103,6 +103,10 @@ export class WorkflowWebsocketService {
       console.log(`uId is ${uId}, defaulting to uId = 1`);
       uId = 1;
     }
+    // The Computing Unit itself does not authenticate the websocket (it runs the pre-compiled
+    // physical plan the client sends). The access-token is still appended because the Kubernetes
+    // gateway's ext-auth (access-control-service) needs it at connection time to authorize access to
+    // the target computing unit and to resolve which CU pod to route to; the CU ignores it.
     const websocketUrl =
       getWebsocketUrl(WorkflowWebsocketService.TEXERA_WEBSOCKET_ENDPOINT, "") +
       "?wid=" +
@@ -110,7 +114,7 @@ export class WorkflowWebsocketService {
       "&uid=" +
       uId +
       (isDefined(cuId) ? `&cuid=${cuId}` : "") +
-      (AuthService.getAccessToken() !== null ? "&access-token=" + AuthService.getAccessToken() : "");
+      (AuthService.getAccessToken() !== null ? `&access-token=${AuthService.getAccessToken()}` : "");
     console.log("websocketUrl", websocketUrl);
     this.websocket = webSocket<TexeraWebsocketEvent | TexeraWebsocketRequest>(websocketUrl);
     // setup reconnection logic
