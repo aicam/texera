@@ -21,7 +21,7 @@ import { ComponentFixture, TestBed } from "@angular/core/testing";
 import { HttpClientTestingModule } from "@angular/common/http/testing";
 import { BrowserAnimationsModule } from "@angular/platform-browser/animations";
 import { RouterTestingModule } from "@angular/router/testing";
-import { of } from "rxjs";
+import { of, throwError } from "rxjs";
 import type { Mocked } from "vitest";
 
 import { DatasetCardItemComponent } from "./dataset-card-item.component";
@@ -42,6 +42,7 @@ function makeDatasetEntry(overrides: Partial<any> = {}): DashboardEntry {
     name: "ds",
     accessLevel: "WRITE",
     accessibleUserIds: [1, 2],
+    coverImageUrl: undefined,
     likeCount: 5,
     isLiked: false,
     dataset: { isOwner: true },
@@ -67,6 +68,7 @@ describe("DatasetCardItemComponent", () => {
         {
           provide: DatasetService,
           useValue: {
+            getDatasetCoverUrl: vi.fn().mockReturnValue(of({ url: "https://s3.example/presigned" })),
             retrieveOwners: vi.fn().mockReturnValue(of(["owner@example.com"])),
           },
         },
@@ -111,8 +113,34 @@ describe("DatasetCardItemComponent", () => {
   });
 
   describe("coverImageSrc", () => {
-    it("uses the default cover image", () => {
-      component.entry = makeDatasetEntry();
+    it("falls back to the default cover when coverImageUrl is missing", () => {
+      const datasetService = TestBed.inject(DatasetService) as unknown as Mocked<DatasetService>;
+      component.entry = makeDatasetEntry({ coverImageUrl: undefined });
+      component.ngOnChanges({ entry: { currentValue: component.entry } } as any);
+      expect(component.coverImageSrc).toBe(component.defaultCover);
+      expect(datasetService.getDatasetCoverUrl).not.toHaveBeenCalled();
+    });
+
+    it("swaps in the presigned URL once the backend resolves it", () => {
+      const datasetService = TestBed.inject(DatasetService) as unknown as Mocked<DatasetService>;
+      component.entry = makeDatasetEntry({ id: 7, coverImageUrl: "v1/img.png" });
+      component.ngOnChanges({ entry: { currentValue: component.entry } } as any);
+      expect(datasetService.getDatasetCoverUrl).toHaveBeenCalledWith(7);
+      expect(component.coverImageSrc).toBe("https://s3.example/presigned");
+    });
+
+    it("falls back to the default cover when the backend returns a null url", () => {
+      const datasetService = TestBed.inject(DatasetService) as unknown as Mocked<DatasetService>;
+      datasetService.getDatasetCoverUrl.mockReturnValueOnce(of({ url: null }));
+      component.entry = makeDatasetEntry({ id: 9, coverImageUrl: "v1/img.png" });
+      component.ngOnChanges({ entry: { currentValue: component.entry } } as any);
+      expect(component.coverImageSrc).toBe(component.defaultCover);
+    });
+
+    it("falls back to the default cover when the backend errors", () => {
+      const datasetService = TestBed.inject(DatasetService) as unknown as Mocked<DatasetService>;
+      datasetService.getDatasetCoverUrl.mockReturnValueOnce(throwError(() => new Error("403")));
+      component.entry = makeDatasetEntry({ id: 11, coverImageUrl: "v1/img.png" });
       component.ngOnChanges({ entry: { currentValue: component.entry } } as any);
       expect(component.coverImageSrc).toBe(component.defaultCover);
     });
