@@ -82,4 +82,27 @@ describe("PowerButtonComponent", () => {
   it("should create", () => {
     expect(component).toBeTruthy();
   });
+
+  it("toggles the advanced-settings panel", () => {
+    component.showAdvancedSettings = false;
+    component.toggleAdvancedSettings();
+    expect(component.showAdvancedSettings).toBe(true);
+    component.toggleAdvancedSettings();
+    expect(component.showAdvancedSettings).toBe(false);
+  });
+
+  it("flags a collapsed warning only when collapsed and shm exceeds memory", () => {
+    vi.spyOn(component, "isShmTooLarge").mockReturnValue(true);
+    component.showAdvancedSettings = false;
+    expect(component.hasCollapsedWarning()).toBe(true);
+    // Expanded: the inline warning is visible, so the header stays quiet.
+    component.showAdvancedSettings = true;
+    expect(component.hasCollapsedWarning()).toBe(false);
+  });
+
+  it("does not flag a warning when shm fits within memory", () => {
+    vi.spyOn(component, "isShmTooLarge").mockReturnValue(false);
+    component.showAdvancedSettings = false;
+    expect(component.hasCollapsedWarning()).toBe(false);
+  });
 });

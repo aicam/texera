@@ -20,6 +20,7 @@
 @import "../../dashboard.component.scss";
 @import "../../section-style";
 @import "../../button-style";
+@import "../../../../common/style/advanced-settings";
 
 .subsection-grid-container {
   min-width: 100%;
@@ -32,11 +33,6 @@
 .cpu-selection,
 .gpu-selection {
   width: 100%;
-}
-
-.jvm-memory-slider {
-  width: 100%;
-  margin: 10px 0;
 }
 
 .memory-warning {
