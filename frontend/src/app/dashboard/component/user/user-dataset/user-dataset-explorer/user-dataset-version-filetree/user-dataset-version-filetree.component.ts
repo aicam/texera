@@ -19,13 +19,19 @@
 
 import { UntilDestroy } from "@ngneat/until-destroy";
 import { AfterViewInit, Component, EventEmitter, Input, Output, ViewChild } from "@angular/core";
-import { DatasetFileNode } from "../../../../../../common/type/datasetVersionFileTree";
+import {
+  DatasetFileNode,
+  getRelativePathFromDatasetFileNode,
+} from "../../../../../../common/type/datasetVersionFileTree";
 import { ITreeOptions, TREE_ACTIONS, TreeModule } from "@ali-hm/angular-tree-component";
 import { NgIf } from "@angular/common";
 import { ɵNzTransitionPatchDirective } from "ng-zorro-antd/core/transition-patch";
 import { NzIconDirective } from "ng-zorro-antd/icon";
 import { NzSpaceCompactItemDirective } from "ng-zorro-antd/space";
 import { NzButtonComponent } from "ng-zorro-antd/button";
+import { NzTooltipDirective } from "ng-zorro-antd/tooltip";
+
+const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".gif", ".webp"] as const;
 
 @UntilDestroy()
 @Component({
@@ -39,6 +45,7 @@ import { NzButtonComponent } from "ng-zorro-antd/button";
     NzIconDirective,
     NzSpaceCompactItemDirective,
     NzButtonComponent,
+    NzTooltipDirective,
   ],
 })
 export class UserDatasetVersionFiletreeComponent implements AfterViewInit {
@@ -52,6 +59,9 @@ export class UserDatasetVersionFiletreeComponent implements AfterViewInit {
   public isExpandAllAfterViewInit = false;
 
   @ViewChild("tree") tree: any;
+
+  @Output()
+  setCoverImage = new EventEmitter<string>();
 
   public fileTreeDisplayOptions: ITreeOptions = {
     displayField: "name",
@@ -88,4 +98,11 @@ export class UserDatasetVersionFiletreeComponent implements AfterViewInit {
     }
   }
 
+  isImageFile(fileName: string): boolean {
+    return IMAGE_EXTENSIONS.some(ext => fileName.toLowerCase().endsWith(ext));
+  }
+
+  onSetCover(nodeData: DatasetFileNode): void {
+    this.setCoverImage.emit(getRelativePathFromDatasetFileNode(nodeData));
+  }
 }

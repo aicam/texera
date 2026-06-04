@@ -44,7 +44,7 @@
           <img
             alt="example"
             class="card-cover-image"
-            [src]="getCardImage(entity)"
+            [src]="getCoverImage(entity)"
             (error)="$any($event.target).src = defaultBackground" />
           <nz-avatar
             class="entity-avatar"
