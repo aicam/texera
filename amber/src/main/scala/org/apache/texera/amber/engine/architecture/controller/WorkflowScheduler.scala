@@ -49,7 +49,13 @@ class WorkflowScheduler(
     val planningWorkflowContext = new WorkflowContext(
       workflowContext.workflowId,
       workflowContext.executionId,
-      preScheduling.planningWorkflowSettings
+      preScheduling.planningWorkflowSettings,
+      cuid = workflowContext.cuid,
+      // Carry the issuing user's per-execution JWT (and cuid) into the planning context. The
+      // schedule generator's resource allocator reads userJwtToken from THIS context to stamp it
+      // onto every WorkerConfig; without copying it here it defaults to None, so the Python worker
+      // never receives USER_JWT_TOKEN and user-UDF dataset reads fail with "JWT token is required".
+      userJwtToken = workflowContext.userJwtToken
     )
     this.schedule = new CostBasedScheduleGenerator(
       planningWorkflowContext,

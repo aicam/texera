@@ -6,8 +6,14 @@ import org.apache.texera.amber.core.tuple.{Attribute, AttributeType, Schema}
 import org.apache.texera.amber.core.workflow.{OutputPort, PortIdentity}
 import org.apache.texera.amber.operator.metadata.{OperatorGroupConstants, OperatorInfo}
 import org.apache.texera.amber.operator.source.PythonSourceOperatorDescriptor
-import org.apache.texera.amber.core.storage.{DocumentFactory, FileResolver}
+import org.apache.texera.amber.core.storage.FileResolver
+import org.apache.texera.amber.core.storage.util.LakeFSStorageClient
 import org.apache.texera.amber.config.ApplicationConfig
+
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
+import java.nio.file.Paths
+import scala.jdk.CollectionConverters._
 
 class CloudMapperSourceOpDesc extends PythonSourceOperatorDescriptor {
   @JsonProperty(required = true)
@@ -43,13 +49,33 @@ class CloudMapperSourceOpDesc extends PythonSourceOperatorDescriptor {
     }
   }
 
-  override def generatePythonCode(): String = {
-    val directoryUri = FileResolver.resolveDirectory(directoryName)
-    println(directoryUri.toASCIIString)
+  // Render a Python string literal safely.
+  private def pyStr(s: String): String =
+    "'" + s.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
-    val directoryDocument = DocumentFactory.openReadonlyDocument(directoryUri, isDirectory = true)
-    val directoryFile = directoryDocument.asFile()
-    println(directoryFile.getAbsolutePath)
+  override def generatePythonCode(): String = {
+    // Resolve dataset references at codegen WITHOUT materializing files locally. Compilation
+    // was offloaded off the computing unit, so this codegen now runs in the compiling-service
+    // pod, which does NOT share a filesystem with the CU that executes this UDF. We therefore
+    // emit the dataset *paths* and let the CU download each file itself at runtime via
+    // DatasetFileDocument (LakeFS presigned URLs), the same way every other source operator reads.
+    val directoryUri = FileResolver.resolveDirectory(directoryName)
+    val dirSegments =
+      Paths.get(directoryUri.getPath).iterator().asScala.map(_.toString).toArray
+    val readsRepo = dirSegments(0)
+    val readsVersionHash = URLDecoder.decode(dirSegments(1), StandardCharsets.UTF_8.name())
+    val datasetPathPrefix = directoryName.stripPrefix("/").stripSuffix("/")
+
+    // List the reads version's object paths (LakeFS; the backend has direct access at codegen).
+    val readsObjectPaths = LakeFSStorageClient
+      .retrieveObjectsOfVersion(readsRepo, readsVersionHash)
+      .map(_.getPath)
+      .filter(p => p != null && p.nonEmpty)
+
+    // (zipEntryPath, DatasetFileDocument path) tuples that the CU resolves + downloads at runtime.
+    val pythonReadsFiles = readsObjectPaths
+      .map(p => s"(${pyStr(p)}, ${pyStr(s"$datasetPathPrefix/$p")})")
+      .mkString("[", ", ", "]")
 
     // Convert the Scala referenceGenome to a Python string
     val pythonReferenceGenome = s"'${referenceGenome.referenceGenome.getName}'"
@@ -64,30 +90,18 @@ class CloudMapperSourceOpDesc extends PythonSourceOperatorDescriptor {
     val pythonAllReferenceGenomes =
       s"[${pythonReferenceGenome}] + ${pythonAdditionalReferenceGenomes}"
 
-    // Convert all reference genomes (main + additional) to a Python list format for FASTA files
+    // FASTA / GTF single files (custom 'My Reference'): read at runtime in the CU as file-like
+    // BytesIO objects via DatasetFileDocument, instead of opening a compile-time local path.
     val pythonFastaFiles = (referenceGenome :: additionalReferenceGenomes)
       .flatMap(_.fastAFiles)
-      .map(file => {
-        val fileUri = FileResolver.resolve(file)
-        val fileDocument = DocumentFactory.openReadonlyDocument(fileUri, isDirectory = false)
-        val fastAFilePath = fileDocument.asFile().getAbsolutePath
-        s"open(r'$fastAFilePath', 'rb')"
-      })
+      .map(file => s"DatasetFileDocument(${pyStr(file)}).read_file()")
       .mkString("[", ", ", "]")
 
-    // Extract GTF file if exists for 'My Reference' (considering both main and additional reference genomes)
-    val pythonGtfFile = (referenceGenome :: additionalReferenceGenomes)
+    val pythonGtfFileValue = (referenceGenome :: additionalReferenceGenomes)
       .find(_.referenceGenome == ReferenceGenomeEnum.MY_REFERENCE)
       .flatMap(_.gtfFile)
-      .map(file => {
-        val fileUri = FileResolver.resolve(file)
-        val fileDocument = DocumentFactory.openReadonlyDocument(fileUri, isDirectory = false)
-        val gtfFilePath = fileDocument.asFile().getAbsolutePath
-        s"open(r'$gtfFilePath', 'rb')"
-      })
+      .map(file => s"DatasetFileDocument(${pyStr(file)}).read_file()")
       .getOrElse("None")
-
-    val pythonGtfFileValue = if (pythonGtfFile == "None") "None" else pythonGtfFile
 
     s"""from pytexera import *
        |
@@ -95,11 +109,24 @@ class CloudMapperSourceOpDesc extends PythonSourceOperatorDescriptor {
        |
        |    @overrides
        |    def produce(self) -> Iterator[Union[TupleLike, TableLike, None]]:
-       |        import requests, time, tarfile, io
+       |        import requests, time, tarfile, io, os, tempfile, zipfile
        |
-       |        reads_path = r'${directoryFile.getAbsolutePath}'
        |        service_url = "${clusterLauncherServiceTarget}"
        |        cluster_id  = ${clusterId}
+       |
+       |        # ------------------------------------------------------------------
+       |        # Step 0: Build the reads zip from the dataset version AT RUNTIME in
+       |        # this computing-unit pod. Each file is fetched from LakeFS via a
+       |        # presigned URL (DatasetFileDocument), then written into a local zip.
+       |        # The CU compiles nothing, so the path must be created here, not baked
+       |        # in by the (separate) compiling-service pod.
+       |        # ------------------------------------------------------------------
+       |        reads_files = ${pythonReadsFiles}
+       |        reads_fd, reads_path = tempfile.mkstemp(suffix=".zip")
+       |        os.close(reads_fd)
+       |        with zipfile.ZipFile(reads_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+       |            for zip_entry, dataset_path in reads_files:
+       |                zf.writestr(zip_entry, DatasetFileDocument(dataset_path).read_file().read())
        |
        |        # ------------------------------------------------------------------
        |        # Step 1: Ask the Go service for a presigned S3 PUT URL.

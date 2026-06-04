@@ -132,6 +132,10 @@ lazy val WorkflowCompilingService = (project in file("workflow-compiling-service
       // override it as io.dropwizard 4 require 2.16.1 or higher
       "com.fasterxml.jackson.module" %% "jackson-module-scala" % jacksonVersion,
       "com.fasterxml.jackson.core" % "jackson-databind" % jacksonVersion,
+      // blackbird is pulled transitively by dropwizard at 2.16.1; pin it to the
+      // databind version so SuperSonicBeanDeserializer.wrapAndThrow resolves
+      // (otherwise NoSuchMethodError on operator-JSON deserialization errors).
+      "com.fasterxml.jackson.module" % "jackson-module-blackbird" % jacksonVersion,
       "org.glassfish.jersey.core" % "jersey-common" % "3.0.12"
     )
   )
