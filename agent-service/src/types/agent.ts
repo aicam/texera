@@ -34,7 +34,7 @@ export interface TokenUsage {
 }
 
 export const INITIAL_STEP_ID = "step-initial";
-export const DEFAULT_AGENT_NAME = "DKNetAgent";
+export const DEFAULT_AGENT_NAME = "dkNetAgent";
 
 export interface ReActStep {
   id: string;
@@ -73,17 +73,15 @@ export interface AgentSettings {
   maxOperatorResultCharLimit: number;
   maxOperatorResultCellCharLimit: number;
   operatorResultSerializationMode: OperatorResultSerializationMode;
-  toolTimeoutMs: number;
   executionTimeoutMs: number;
   maxSteps: number;
 }
 
 export const DEFAULT_AGENT_SETTINGS: Omit<AgentSettings, "systemPrompt"> = {
   disabledTools: new Set(),
-  maxOperatorResultCharLimit: 2000,
-  maxOperatorResultCellCharLimit: 2000,
+  maxOperatorResultCharLimit: 10000,
+  maxOperatorResultCellCharLimit: 10000,
   operatorResultSerializationMode: OperatorResultSerializationMode.TSV,
-  toolTimeoutMs: 240000,
   executionTimeoutMs: 240000,
   maxSteps: 100,
 };
@@ -121,7 +119,6 @@ export interface AgentSettingsApi {
   maxOperatorResultCharLimit?: number;
   maxOperatorResultCellCharLimit?: number;
   operatorResultSerializationMode?: "tsv";
-  toolTimeoutSeconds?: number;
   executionTimeoutMinutes?: number;
   disabledTools?: string[];
   maxSteps?: number;

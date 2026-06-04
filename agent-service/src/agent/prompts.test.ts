@@ -26,7 +26,7 @@ describe("buildSystemPrompt", () => {
     const prompt = buildSystemPrompt(new WorkflowSystemMetadata());
     const normalizedPrompt = prompt.toLowerCase();
 
-    expect(prompt).toContain("You are DKNetAgent, the DKNet-AI assistant for dknet-ai.org");
+    expect(prompt).toContain("You are dkNetAgent, the DKNet-AI assistant for dknet-ai.org");
     expect(prompt).toContain("Use DKNet-AI as the primary platform name");
     expect(prompt).toContain("Apache Texera is the underlying workflow/dataflow engine");
     expect(normalizedPrompt).toContain("on-demand computing resources");
@@ -74,5 +74,50 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("Use one of those exact operator type names");
     expect(prompt).not.toContain("## CSVFileScan");
     expect(prompt).not.toContain('"fileName"');
+  });
+});
+
+function storeWith(operatorTypes: string[]): WorkflowSystemMetadata {
+  const store = new WorkflowSystemMetadata();
+  store.loadFromMetadata({
+    operators: operatorTypes.map(operatorType => ({
+      operatorType,
+      operatorVersion: "1",
+      jsonSchema: { properties: {}, required: [], definitions: {} },
+      additionalMetadata: {
+        userFriendlyName: operatorType,
+        operatorGroupName: "g",
+        operatorDescription: operatorType,
+        inputPorts: [],
+        outputPorts: [{}],
+      },
+    })),
+    groups: [],
+  } as any);
+  return store;
+}
+
+describe("buildSystemPrompt capability gating", () => {
+  test("strips the Python and R UDF guides (and their markers) when neither operator is available", () => {
+    const prompt = buildSystemPrompt(storeWith([]));
+    expect(prompt).not.toContain("## Python UDF Guide");
+    expect(prompt).not.toContain("## R UDF Guide");
+    // No dangling capability markers should ever leak into the prompt.
+    expect(prompt).not.toContain("@requires-capability");
+    expect(prompt).not.toContain("@end-capability");
+  });
+
+  test("keeps the Python guide when PythonUDFV2 is available but R is not", () => {
+    const prompt = buildSystemPrompt(storeWith(["PythonUDFV2"]));
+    expect(prompt).toContain("## Python UDF Guide");
+    expect(prompt).not.toContain("## R UDF Guide");
+    expect(prompt).not.toContain("@requires-capability");
+  });
+
+  test("keeps the R guide when RUDF is available but Python is not", () => {
+    const prompt = buildSystemPrompt(storeWith(["RUDF"]));
+    expect(prompt).toContain("## R UDF Guide");
+    expect(prompt).not.toContain("## Python UDF Guide");
+    expect(prompt).not.toContain("@end-capability");
   });
 });

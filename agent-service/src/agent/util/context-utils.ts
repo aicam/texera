@@ -39,6 +39,8 @@ export interface AssembleContextOptions {
   maxResolvedCharLimit?: number;
   /** Whether a computing unit is connected; surfaced so the model can guide the user to connect one. */
   computingUnitConnected?: boolean;
+  /** Number of older events dropped by the rolling window; rendered as a note in the event log. */
+  omittedEventCount?: number;
 }
 
 export function assembleContext(
@@ -53,9 +55,10 @@ export function assembleContext(
     includeWorkflowContext = false,
     maxResolvedCharLimit,
     computingUnitConnected = false,
+    omittedEventCount = 0,
   } = options;
   const sections: string[] = [];
-  sections.push(serializeEvents(visibleSteps, maxResolvedCharLimit));
+  sections.push(serializeEvents(visibleSteps, maxResolvedCharLimit, omittedEventCount));
 
   // When the user is in a workflow workspace the section is always present, so the model can
   // tell "empty workflow" apart from "no workflow context"; an empty DAG renders as "(empty)".
@@ -92,9 +95,15 @@ export function assembleContext(
   return [{ role: "user", content }];
 }
 
-function serializeEvents(steps: ReActStep[], maxResolvedCharLimit?: number): string {
+function serializeEvents(steps: ReActStep[], maxResolvedCharLimit?: number, omittedEventCount = 0): string {
   const lines: string[] = [];
   lines.push("# Event Context");
+
+  if (omittedEventCount > 0) {
+    lines.push(
+      `(${omittedEventCount} earlier event(s) omitted to fit the context window; the current workflow below is always complete.)`
+    );
+  }
 
   if (steps.length === 0) {
     lines.push("");

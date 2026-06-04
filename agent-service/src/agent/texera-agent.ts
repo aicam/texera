@@ -71,6 +71,8 @@ import {
 import { RemoteMcpToolRegistry } from "./mcp/mcp-client-manager";
 import { createRemoteMcpTools } from "./tools/mcp-remote-tools";
 import { assembleContext } from "./util/context-utils";
+import { windowEvents, detectRepeatedToolCalls, appendSystemNotice } from "./react-loop-guards";
+import { env } from "../config/env";
 import { compileWorkflowAsync, type WorkflowCompilationResponse } from "../api/compile-api";
 import { persistWorkflow, retrieveWorkflow } from "../api/workflow-api";
 import { createLogger } from "../logger";
@@ -173,6 +175,8 @@ export class TexeraAgent {
       ...DEFAULT_AGENT_SETTINGS,
       systemPrompt: this.systemPrompt,
     };
+    // Precedence: built-in defaults < deployment env overrides < persisted per-agent config.
+    this.applyEnvSettingOverrides();
     if (config.persistedConfig?.settings) {
       this.applySettingsApi(config.persistedConfig.settings);
     }
@@ -180,6 +184,23 @@ export class TexeraAgent {
     this.tools = this.createTools();
     if (config.reactSteps && config.reactSteps.length > 0) {
       this.restoreReActSteps(config.reactSteps);
+    }
+  }
+
+  // Deployment-level overrides of the hardcoded agent defaults, set via AGENT_* env vars
+  // (see config/env.ts) so behavior is tunable in k8s without a rebuild.
+  private applyEnvSettingOverrides(): void {
+    if (env.AGENT_MAX_OPERATOR_RESULT_CHAR_LIMIT !== undefined) {
+      this.settings.maxOperatorResultCharLimit = env.AGENT_MAX_OPERATOR_RESULT_CHAR_LIMIT;
+    }
+    if (env.AGENT_MAX_OPERATOR_RESULT_CELL_CHAR_LIMIT !== undefined) {
+      this.settings.maxOperatorResultCellCharLimit = env.AGENT_MAX_OPERATOR_RESULT_CELL_CHAR_LIMIT;
+    }
+    if (env.AGENT_EXECUTION_TIMEOUT_MS !== undefined) {
+      this.settings.executionTimeoutMs = env.AGENT_EXECUTION_TIMEOUT_MS;
+    }
+    if (env.AGENT_MAX_STEPS !== undefined) {
+      this.settings.maxSteps = env.AGENT_MAX_STEPS;
     }
   }
 
@@ -220,9 +241,6 @@ export class TexeraAgent {
     if (settings.operatorResultSerializationMode !== undefined) {
       this.settings.operatorResultSerializationMode =
         settings.operatorResultSerializationMode as OperatorResultSerializationMode;
-    }
-    if (settings.toolTimeoutSeconds !== undefined) {
-      this.settings.toolTimeoutMs = settings.toolTimeoutSeconds * 1000;
     }
     if (settings.executionTimeoutMinutes !== undefined) {
       this.settings.executionTimeoutMs = settings.executionTimeoutMinutes * 60000;
@@ -489,7 +507,6 @@ export class TexeraAgent {
       maxOperatorResultCharLimit: this.settings.maxOperatorResultCharLimit,
       maxOperatorResultCellCharLimit: this.settings.maxOperatorResultCellCharLimit,
       operatorResultSerializationMode: this.settings.operatorResultSerializationMode,
-      toolTimeoutSeconds: Math.round(this.settings.toolTimeoutMs / 1000),
       executionTimeoutMinutes: Math.round(this.settings.executionTimeoutMs / 60000),
       disabledTools: Array.from(this.settings.disabledTools),
       maxSteps: this.settings.maxSteps,
@@ -520,7 +537,6 @@ export class TexeraAgent {
     maxOperatorResultCharLimit?: number;
     maxOperatorResultCellCharLimit?: number;
     operatorResultSerializationMode?: OperatorResultSerializationMode;
-    toolTimeoutMs?: number;
     executionTimeoutMs?: number;
     disabledTools?: Set<string>;
     maxSteps?: number;
@@ -533,9 +549,6 @@ export class TexeraAgent {
     }
     if (updates.operatorResultSerializationMode !== undefined) {
       this.settings.operatorResultSerializationMode = updates.operatorResultSerializationMode;
-    }
-    if (updates.toolTimeoutMs !== undefined) {
-      this.settings.toolTimeoutMs = updates.toolTimeoutMs;
     }
     if (updates.executionTimeoutMs !== undefined) {
       this.settings.executionTimeoutMs = updates.executionTimeoutMs;
@@ -663,13 +676,27 @@ export class TexeraAgent {
           }
 
           const visibleSteps = this.getVisibleReActSteps();
-          const processed = assembleContext(visibleSteps, this.workflowState, this.getFormattedResultsForDAG(), {
+          // Bound the event context with a rolling window: keep the latest user request plus the
+          // most recent events that fit the token budget; drop older ones. The current workflow is
+          // always shown in full below, so the agent never loses the state it is working on.
+          const { kept, omitted } = windowEvents(visibleSteps, env.AGENT_MAX_CONTEXT_TOKENS);
+          let processed = assembleContext(kept, this.workflowState, this.getFormattedResultsForDAG(), {
             useRedact: false,
             compilationResult,
             includeWorkflowContext,
             maxResolvedCharLimit: this.settings.maxOperatorResultCharLimit,
             computingUnitConnected: taskContext.computingUnitId !== undefined,
+            omittedEventCount: omitted,
           });
+
+          // Guard: nudge the model out of loops when it keeps calling the same tool with the same
+          // parameters (e.g. retrying a wrong dataset path). Computed over the full history so a
+          // repeat is caught even if the earlier identical calls fell outside the window.
+          const repeatWarning = detectRepeatedToolCalls(visibleSteps, env.AGENT_REPEATED_TOOL_CALL_THRESHOLD);
+          if (repeatWarning) {
+            processed = appendSystemNotice(processed, repeatWarning);
+          }
+
           lastPreparedMessages = processed;
           return { messages: processed };
         },

@@ -16,6 +16,7 @@
 # under the License.
 
 {{- if .Values.agentService.enabled }}
+{{- $promptMounted := or .Values.agentService.systemPromptOverride (.Files.Get "files/system-prompt.md") }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -83,13 +84,54 @@ spec:
             {{- if .Values.bioMcpService.enabled }}
             - name: MCP_SERVERS
               value: '[{"name":"biomcp","url":"http://{{ .Values.bioMcpService.name }}-svc:{{ .Values.bioMcpService.service.port }}/mcp","toolPrefix":"biomcp","apiKeyEnv":"BIOMCP_API_KEY"}]'
-            - name: MCP_REQUEST_TIMEOUT_MS
-              value: "{{ .Values.agentService.env.mcpRequestTimeoutMs }}"
             - name: BIOMCP_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ .Release.Name }}-bio-mcp-service-secret
                   key: biomcp-api-key
+            {{- end }}
+            # Agent config (see agent-service/src/config/env.ts). When a system-prompt override
+            # is provided it is mounted from a ConfigMap; the settings below override built-ins.
+            {{- if $promptMounted }}
+            - name: AGENT_SYSTEM_PROMPT_PATH
+              value: /etc/agent-config/system-prompt.md
+            {{- end }}
+            {{- with .Values.agentService.env }}
+            # Generic MCP transport timeout — applies to every remote MCP server, so it is emitted
+            # whenever agent-service is enabled (not gated on bioMcpService).
+            {{- if .mcpRequestTimeoutMs }}
+            - name: MCP_REQUEST_TIMEOUT_MS
+              value: "{{ .mcpRequestTimeoutMs }}"
+            {{- end }}
+            {{- if .maxOperatorResultCharLimit }}
+            - name: AGENT_MAX_OPERATOR_RESULT_CHAR_LIMIT
+              value: "{{ .maxOperatorResultCharLimit }}"
+            {{- end }}
+            {{- if .maxOperatorResultCellCharLimit }}
+            - name: AGENT_MAX_OPERATOR_RESULT_CELL_CHAR_LIMIT
+              value: "{{ .maxOperatorResultCellCharLimit }}"
+            {{- end }}
+            {{- if .executionTimeoutMs }}
+            - name: AGENT_EXECUTION_TIMEOUT_MS
+              value: "{{ .executionTimeoutMs }}"
+            {{- end }}
+            {{- if .maxSteps }}
+            - name: AGENT_MAX_STEPS
+              value: "{{ .maxSteps }}"
+            {{- end }}
+            {{- if .repeatedToolCallThreshold }}
+            - name: AGENT_REPEATED_TOOL_CALL_THRESHOLD
+              value: "{{ .repeatedToolCallThreshold }}"
+            {{- end }}
+            {{- if .maxContextTokens }}
+            - name: AGENT_MAX_CONTEXT_TOKENS
+              value: "{{ .maxContextTokens }}"
+            {{- end }}
+            # Additive: unioned on top of the agent's built-in always-excluded operator list.
+            {{- if .extraExcludedOperatorTypes }}
+            - name: AGENT_EXTRA_EXCLUDED_OPERATOR_TYPES
+              value: "{{ .extraExcludedOperatorTypes }}"
+            {{- end }}
             {{- end }}
           # The service loads operator metadata from the dashboard service on
           # startup, so gate readiness on its health endpoint before the gateway
@@ -106,4 +148,16 @@ spec:
               port: {{ .Values.agentService.service.port }}
             initialDelaySeconds: 15
             periodSeconds: 10
+          {{- if $promptMounted }}
+          volumeMounts:
+            - name: agent-system-prompt
+              mountPath: /etc/agent-config
+              readOnly: true
+          {{- end }}
+      {{- if $promptMounted }}
+      volumes:
+        - name: agent-system-prompt
+          configMap:
+            name: {{ .Release.Name }}-{{ .Values.agentService.name }}-system-prompt
+      {{- end }}
 {{- end }}

@@ -190,9 +190,21 @@ export class AgentWorkbenchComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   addPendingTab(): void {
+    // Only one unsaved "New chat" tab may exist; if one is already open, just focus it
+    // instead of stacking up pending tabs that can't be closed.
+    const existingPending = this.tabs.find(tab => !tab.agentInfo);
+    if (existingPending) {
+      this.selectTab(existingPending.localId);
+      return;
+    }
     const tab = this.createPendingTab();
     this.tabs = [...this.tabs, tab];
     this.selectTab(tab.localId);
+  }
+
+  /** True when an unsaved "New chat" tab (no real agent yet) is already open. */
+  get hasPendingTab(): boolean {
+    return this.tabs.some(tab => !tab.agentInfo);
   }
 
   selectTab(tabId: string): void {
@@ -293,8 +305,8 @@ export class AgentWorkbenchComponent implements OnInit, OnDestroy, OnChanges {
     this.deleteAgent(tab.agentInfo.id, event);
   }
 
-  getTabLabel(tab: AgentWorkbenchTab, index: number): string {
-    return tab.agentInfo?.name ?? `New chat ${index + 1}`;
+  getTabLabel(tab: AgentWorkbenchTab): string {
+    return tab.agentInfo?.name ?? "New chat";
   }
 
   isActiveAgentTab(tab: AgentWorkbenchTab): boolean {

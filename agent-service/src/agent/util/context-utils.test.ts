@@ -140,6 +140,18 @@ describe("assembleContext event serialization", () => {
     expect(content).not.toContain("Source:");
   });
 
+  test("renders the rolling-window omission note when earlier events were dropped", () => {
+    const content = getContextContent([makeUserStep()], new WorkflowState(), new Map(), {
+      omittedEventCount: 3,
+    });
+    expect(content).toContain("3 earlier event(s) omitted to fit the context window");
+  });
+
+  test("omits the rolling-window note when no events were dropped", () => {
+    const content = getContextContent([makeUserStep()]);
+    expect(content).not.toContain("omitted to fit the context window");
+  });
+
   test("limits serialized tool results with maxResolvedCharLimit", () => {
     const content = getContextContent(
       [

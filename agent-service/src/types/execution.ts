@@ -17,7 +17,7 @@
  * under the License.
  */
 
-interface ConsoleMessage {
+export interface ConsoleMessage {
   msgType: string;
   message: string;
 }

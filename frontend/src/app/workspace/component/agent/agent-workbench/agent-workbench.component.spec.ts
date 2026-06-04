@@ -123,14 +123,13 @@ describe("AgentWorkbenchComponent", () => {
     expect(component.activeTabId).toBe("agent-a1");
   });
 
-  it("opens a new pending tab from the plus action", () => {
+  it("does not stack a second pending tab; focuses the existing new chat", () => {
+    expect(component.hasPendingTab).toBe(true);
+
     component.addPendingTab();
 
-    expect(component.tabs).toEqual([
-      { localId: "pending-1", agentInfo: null },
-      { localId: "pending-2", agentInfo: null },
-    ]);
-    expect(component.activeTabId).toBe("pending-2");
+    expect(component.tabs).toEqual([{ localId: "pending-1", agentInfo: null }]);
+    expect(component.activeTabId).toBe("pending-1");
     expect(component.currentAgent).toBeNull();
   });
 

@@ -39,6 +39,24 @@ const EnvSchema = z.object({
   MCP_SERVERS: z.string().default("[]"),
   MCP_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
 
+  // Agent configuration. The system prompt can be overridden by a mounted file (k8s ConfigMap)
+  // so it can change without rebuilding the image; the settings below override
+  // DEFAULT_AGENT_SETTINGS when set. The two guard knobs are always active with these defaults.
+  AGENT_SYSTEM_PROMPT_PATH: z.string().optional(),
+  AGENT_MAX_OPERATOR_RESULT_CHAR_LIMIT: z.coerce.number().int().positive().optional(),
+  AGENT_MAX_OPERATOR_RESULT_CELL_CHAR_LIMIT: z.coerce.number().int().positive().optional(),
+  AGENT_EXECUTION_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
+  AGENT_MAX_STEPS: z.coerce.number().int().positive().optional(),
+  // ReAct-loop guards: warn after this many identical (tool, params) calls in one run, and bound
+  // the event log to roughly this estimated token budget (older events are dropped by a rolling
+  // window; the current workflow state is always shown in full).
+  AGENT_REPEATED_TOOL_CALL_THRESHOLD: z.coerce.number().int().positive().default(3),
+  AGENT_MAX_CONTEXT_TOKENS: z.coerce.number().int().positive().default(80000),
+  // Comma-separated operator types to hide from the agent IN ADDITION TO the built-in obsolete
+  // list (which is always excluded — an empty value here still hides the built-ins). These stay
+  // available to GUI users; this only narrows what the agent sees/suggests.
+  AGENT_EXTRA_EXCLUDED_OPERATOR_TYPES: z.string().optional(),
+
   STORAGE_JDBC_URL: z.string().default("jdbc:postgresql://localhost:5432/texera_db?currentSchema=texera_db,public"),
   STORAGE_JDBC_USERNAME: z.string().default("postgres"),
   STORAGE_JDBC_PASSWORD: z.string().default("postgres"),

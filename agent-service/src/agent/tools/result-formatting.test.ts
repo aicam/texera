@@ -91,6 +91,36 @@ describe("formatOperatorResult - early returns", () => {
   });
 });
 
+describe("formatOperatorResult - console output inclusion", () => {
+  test("error path surfaces both the error and console output", () => {
+    const out = formatOperatorResult(
+      "op1",
+      makeOpInfo({
+        error: "KeyError: 'nonexistent'",
+        consoleLogs: [
+          { msgType: "PRINT", message: "about to index column" },
+          { msgType: "ERROR", message: "KeyError raised in process_table" },
+        ],
+      }),
+      EMPTY_STATE
+    );
+    expect(out).toContain("[ERROR] KeyError: 'nonexistent'");
+    expect(out).toContain("Console output:");
+    expect(out).toContain("[PRINT] about to index column");
+  });
+
+  test("success path appends console output when present", () => {
+    const out = formatOperatorResult(
+      "op1",
+      makeOpInfo({ outputTuples: 1, result: [{ a: 1 }], consoleLogs: [{ msgType: "PRINT", message: "loaded 1 row" }] }),
+      EMPTY_STATE
+    );
+    expect(out).toContain("Output table shape: (1, 1)");
+    expect(out).toContain("Console output:");
+    expect(out).toContain("[PRINT] loaded 1 row");
+  });
+});
+
 describe("formatOperatorResult - table shape and metadata", () => {
   test("uses outputTuples for row count when totalRowCount missing", () => {
     const out = formatOperatorResult("op1", makeOpInfo({ outputTuples: 7, result: [{ a: 1, b: 2 }] }), EMPTY_STATE);

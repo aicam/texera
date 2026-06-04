@@ -21,7 +21,7 @@
   <div class="agent-tabs">
     <div class="agent-tab-list">
       <div
-        *ngFor="let tab of tabs; let i = index; trackBy: trackByTabId"
+        *ngFor="let tab of tabs; trackBy: trackByTabId"
         class="agent-tab"
         role="button"
         tabindex="0"
@@ -45,7 +45,7 @@
             nz-icon
             [nzType]="tab.agentInfo ? 'robot' : 'clock-circle'"
             nzTheme="outline"></i>
-          <span class="tab-label">{{ getTabLabel(tab, i) }}</span>
+          <span class="tab-label">{{ getTabLabel(tab) }}</span>
           <span
             *ngIf="tab.agentInfo"
             class="tab-actions">
@@ -85,9 +85,10 @@
       nzType="text"
       nzSize="small"
       class="new-agent-tab-button"
+      [disabled]="hasPendingTab"
       (click)="addPendingTab()"
       nz-tooltip
-      nzTooltipTitle="New chat">
+      [nzTooltipTitle]="hasPendingTab ? 'A new chat is already open' : 'New chat'">
       <i
         nz-icon
         nzType="plus"

@@ -1,0 +1,39 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# The agent's system prompt, mounted into the agent-service container at AGENT_SYSTEM_PROMPT_PATH.
+# By default the content comes from files/system-prompt.md, which is a symlink to the single
+# source of truth at agent-service/src/agent/system-prompt.md (same pattern as the SQL files in
+# files/). So the deployed prompt tracks the repo with no copy/paste, and can be tweaked live via
+# `kubectl edit configmap`. To override without editing that file, set agentService.systemPromptOverride
+# (inline or `--set-file agentService.systemPromptOverride=./my-prompt.md`), which takes precedence.
+# If neither is available the ConfigMap is skipped and the image's bundled prompt is used.
+{{- if .Values.agentService.enabled }}
+{{- $prompt := .Values.agentService.systemPromptOverride | default (.Files.Get "files/system-prompt.md") }}
+{{- if $prompt }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-{{ .Values.agentService.name }}-system-prompt
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ .Release.Name }}-{{ .Values.agentService.name }}
+data:
+  system-prompt.md: |
+{{ $prompt | indent 4 }}
+{{- end }}
+{{- end }}

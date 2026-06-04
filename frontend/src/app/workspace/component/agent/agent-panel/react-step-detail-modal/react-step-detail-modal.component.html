@@ -110,7 +110,7 @@
         </nz-descriptions>
       </div>
 
-      <!-- Input Messages Section (only when context optimization produced trimmed messages) -->
+      <!-- Input Messages Section (the prepared, rolling-window context sent to the model) -->
       <div
         *ngIf="step.inputMessages && step.inputMessages.length > 0"
         style="margin-bottom: 24px">

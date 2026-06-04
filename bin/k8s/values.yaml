@@ -275,6 +275,26 @@ agentService:
     # (access-control-service / LiteLLM), not to the upstream provider.
     llmApiKey: "dummy"
     mcpRequestTimeoutMs: 30000
+    # Agent behavior tuning — override the image's built-in defaults without rebuilding.
+    # Leave a value blank to fall back to the built-in default.
+    maxOperatorResultCharLimit: 10000
+    maxOperatorResultCellCharLimit: 10000
+    executionTimeoutMs: 240000
+    maxSteps: 100
+    # ReAct-loop guards: warn after this many identical (tool, params) calls, and bound the event
+    # log to roughly this estimated token budget (older events are dropped; workflow state is kept).
+    repeatedToolCallThreshold: 3
+    maxContextTokens: 80000
+    # Operator types to hide from the agent IN ADDITION TO the built-in always-excluded obsolete list
+    # (PythonUDFSourceV2, DualInputPortsPythonUDFV2, PythonLambdaFunction, PythonTableReducer,
+    # RUDFSource, CSVOldFileScan, Dummy, SklearnTesting). Empty here still hides those built-ins;
+    # this only hides EXTRA types. Comma-separated. GUI users keep every operator regardless.
+    extraExcludedOperatorTypes: ""
+  # System-prompt override (inline). Empty = the chart mounts files/system-prompt.md — a symlink to
+  # agent-service/src/agent/system-prompt.md — as a ConfigMap, so the deployed prompt tracks the repo
+  # (and is editable live via `kubectl edit configmap`) with no copy/paste. Set this to override that
+  # without editing the file, e.g.  helm upgrade ... --set-file agentService.systemPromptOverride=./my-prompt.md
+  systemPromptOverride: ""
 
 bioMcpService:
   enabled: true

@@ -20,6 +20,7 @@
 import type { OperatorInfo } from "../../types/execution";
 import type { WorkflowState } from "../workflow-state";
 import { formatExecuteOperatorResult, getVisibleResultHeaders, limitResolvedText } from "./tools-utility";
+import { formatConsoleLogs, formatErrorAndConsole, successConsoleBudget } from "./operator-error-formatting";
 
 export function formatOperatorResult(
   operatorId: string,
@@ -28,7 +29,7 @@ export function formatOperatorResult(
   maxResultCharLimit?: number
 ): string {
   if (opInfo.error) {
-    return limitResolvedText(`[ERROR] ${opInfo.error}`, maxResultCharLimit);
+    return formatErrorAndConsole(opInfo, maxResultCharLimit ?? Number.MAX_SAFE_INTEGER);
   }
 
   if (!opInfo.result || !Array.isArray(opInfo.result)) {
@@ -63,7 +64,16 @@ export function formatOperatorResult(
   ].filter(Boolean);
 
   const briefSummary = formatExecuteOperatorResult(operatorId);
-  return limitResolvedText([briefSummary, ...metadataLines, dataString].filter(Boolean).join("\n"), maxResultCharLimit);
+
+  // Reserve a small slice of the budget for console output (print/stderr) when present, so it is
+  // not pushed out by the result table. With no console logs the output is unchanged.
+  const consoleBlock = formatConsoleLogs(opInfo.consoleLogs, successConsoleBudget(maxResultCharLimit));
+  const dataBudget =
+    maxResultCharLimit !== undefined && consoleBlock
+      ? Math.max(0, maxResultCharLimit - consoleBlock.length - 1)
+      : maxResultCharLimit;
+  const body = limitResolvedText([briefSummary, ...metadataLines, dataString].filter(Boolean).join("\n"), dataBudget);
+  return [body, consoleBlock].filter(Boolean).join("\n");
 }
 
 function formatInputOutputMetadata(

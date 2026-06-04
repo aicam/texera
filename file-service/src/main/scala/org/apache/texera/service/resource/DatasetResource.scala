@@ -418,11 +418,13 @@ class DatasetResource extends LazyLogging {
         LakeFSStorageClient.retrieveObjectsOfVersion(repositoryName, commit.getId)
       }
 
+      // Key the path on the dataset OWNER's email, not the version creator's — a shared-write
+      // collaborator must still produce /ownerEmail/... paths (creator == owner for owned datasets).
       DashboardDatasetVersion(
         insertedVersion,
         DatasetFileNode
           .fromLakeFSRepositoryCommittedObjects(
-            Map((user.getEmail, datasetName, newVersionName) -> fileNodes)
+            Map((getOwner(ctx, did).getEmail, datasetName, newVersionName) -> fileNodes)
           )
       )
     }
@@ -1201,10 +1203,13 @@ class DatasetResource extends LazyLogging {
         throw new NotFoundException(ERR_DATASET_VERSION_NOT_FOUND_MESSAGE)
       )
 
+      // Dataset file paths are addressed by the OWNER's email (/ownerEmail/datasetName/versionName/...),
+      // not the requester's — otherwise a public/shared dataset resolves to the wrong namespace. This
+      // mirrors fetchDatasetVersionRootFileNodes, which already keys on the owner.
       val ownerNode = DatasetFileNode
         .fromLakeFSRepositoryCommittedObjects(
           Map(
-            (user.getEmail, dataset.getName, latestVersion.getName) -> LakeFSStorageClient
+            (getOwner(ctx, did).getEmail, dataset.getName, latestVersion.getName) -> LakeFSStorageClient
               .retrieveObjectsOfVersion(dataset.getRepositoryName, latestVersion.getVersionHash)
           )
         )

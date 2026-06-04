@@ -63,6 +63,14 @@ export class AgentFloatComponent implements OnInit, OnDestroy {
   private static readonly MAX_WIDTH_RATIO = 0.9;
   private static readonly MAX_HEIGHT_RATIO = 0.85;
   private static readonly DEFAULT_WIDTH = 400;
+  // The panel is anchored at top: ANCHOR_TOP / right: ANCHOR_RIGHT (see scss); the drag
+  // offset is added on top. ANCHOR_TOP sits just below the workspace menu bar, so clamping
+  // the offset within these bounds keeps the panel on-screen and below the menu bar — it can
+  // never be dragged behind the bar and stranded.
+  private static readonly ANCHOR_TOP = 72;
+  private static readonly ANCHOR_RIGHT = 16;
+  private static readonly EDGE_MARGIN = 8;
+  private static readonly MIN_VISIBLE = 80;
 
   width = 0; // 0 means collapsed (only the floating button shows).
   height = Math.max(AgentFloatComponent.MIN_HEIGHT, Math.round(window.innerHeight * 0.7));
@@ -101,10 +109,14 @@ export class AgentFloatComponent implements OnInit, OnDestroy {
     if (!isNaN(savedX) && !isNaN(savedY)) {
       this.dragPosition = { x: savedX, y: savedY };
     }
+    // Repair any previously-saved off-screen/behind-the-menu position on load.
+    this.clampPosition();
+    window.addEventListener("resize", this.onWindowResize);
   }
 
   ngOnDestroy(): void {
     this.removeResizeListeners?.();
+    window.removeEventListener("resize", this.onWindowResize);
   }
 
   togglePanel(): void {
@@ -120,7 +132,35 @@ export class AgentFloatComponent implements OnInit, OnDestroy {
 
   onDragEnded(event: CdkDragEnd): void {
     this.dragPosition = event.source.getFreeDragPosition();
+    this.clampPosition();
     this.persist();
+  }
+
+  /** Re-clamp on viewport resize so a shrinking window can't strand the panel off-screen. */
+  private readonly onWindowResize = (): void => {
+    this.clampPosition();
+    this.persist();
+  };
+
+  /**
+   * Constrain the drag offset so the panel stays on-screen and below the menu bar. The panel
+   * is anchored top-right; offset (0,0) is the default below-the-menu position. Negative x
+   * moves left into the viewport; positive y moves down. We forbid moving above the anchor
+   * (which would slide it behind the menu bar) and keep enough of the header reachable.
+   */
+  private clampPosition(): void {
+    const w = this.isOpen ? this.width : AgentFloatComponent.DEFAULT_WIDTH;
+    const naturalLeft = window.innerWidth - AgentFloatComponent.ANCHOR_RIGHT - w;
+
+    const minY = 0;
+    const maxY = Math.max(minY, window.innerHeight - AgentFloatComponent.MIN_VISIBLE - AgentFloatComponent.ANCHOR_TOP);
+    const minX = Math.min(0, AgentFloatComponent.EDGE_MARGIN - naturalLeft);
+    const maxX = 0;
+
+    this.dragPosition = {
+      x: Math.min(Math.max(this.dragPosition.x, minX), maxX),
+      y: Math.min(Math.max(this.dragPosition.y, minY), maxY),
+    };
   }
 
   /** Begin a resize from the left / bottom / bottom-left edge. */
