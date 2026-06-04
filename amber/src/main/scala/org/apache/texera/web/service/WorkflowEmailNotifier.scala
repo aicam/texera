@@ -22,6 +22,7 @@ package org.apache.texera.web.service
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.texera.amber.engine.architecture.rpc.controlreturns.WorkflowAggregatedState
 import org.apache.texera.amber.engine.architecture.rpc.controlreturns.WorkflowAggregatedState._
+import org.apache.texera.config.UserSystemConfig
 import org.apache.texera.web.resource.dashboard.user.workflow.WorkflowResource
 import org.apache.texera.web.resource.{EmailMessage, GmailResource}
 import org.hibernate.validator.internal.constraintvalidators.hv.EmailValidator
@@ -38,6 +39,7 @@ class WorkflowEmailNotifier(
     with LazyLogging {
   private val workflowName = WorkflowResource.getWorkflowName(workflowId.toInt)
   private val emailValidator = new EmailValidator()
+  private val projectName: String = UserSystemConfig.projectName
 
   private val TerminalStates: Set[WorkflowAggregatedState] = Set(
     COMPLETED,
@@ -75,7 +77,7 @@ class WorkflowEmailNotifier(
   }
 
   private def createEmailSubject(state: WorkflowAggregatedState): String =
-    s"[Texera] Workflow $workflowName ($workflowId) Status: $state"
+    s"[$projectName] Workflow $workflowName ($workflowId) Status: $state"
 
   private def createEmailContent(state: WorkflowAggregatedState): String = {
     val timestamp = formatTimestamp(Instant.now())
@@ -94,7 +96,7 @@ class WorkflowEmailNotifier(
        |You can view more details by visiting: $dashboardUrl
        |
        |Regards,
-       |Texera Team
+       |$projectName Team
     """.stripMargin.trim
   }
 
