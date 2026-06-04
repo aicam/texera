@@ -17,6 +17,8 @@
  * under the License.
  */
 
+@import "../../../common/style/advanced-settings";
+
 :host {
   display: inline-flex;
   flex: 0 0 auto;
@@ -169,11 +171,6 @@
   &.name-field {
     grid-column: span 2;
   }
-}
-
-.jvm-memory-slider {
-  width: 100%;
-  margin: 10px 0;
 }
 
 .memory-warning {

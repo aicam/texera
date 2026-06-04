@@ -110,6 +110,9 @@ export class UserComputingUnitComponent implements OnInit {
 
   // variables for creating a computing unit
   addComputeUnitModalVisible = false;
+  // Advanced settings disclosure inside the create modal — collapsed by default,
+  // houses the shared-memory and JVM-heap knobs most users never touch.
+  showAdvancedSettings = false;
   // ── progressive creation state shown inside the modal after "Create" ──
   // Phases come from the backend's /creation-status endpoint. The dashboard
   // page does not open a WebSocket to the new CU (workflow page does that),
@@ -342,7 +345,18 @@ export class UserComputingUnitComponent implements OnInit {
 
   showAddComputeUnitModalVisible(): void {
     this.resetCreationProgress();
+    this.showAdvancedSettings = false;
     this.addComputeUnitModalVisible = true;
+  }
+
+  toggleAdvancedSettings(): void {
+    this.showAdvancedSettings = !this.showAdvancedSettings;
+  }
+
+  // Surfaces the shared-memory warning on the collapsed header so an invalid
+  // value tucked inside the panel can't be submitted unseen.
+  hasCollapsedWarning(): boolean {
+    return !this.showAdvancedSettings && this.isShmTooLarge();
   }
 
   handleAddComputeUnitModalOk(): void {
