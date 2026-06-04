@@ -27,12 +27,21 @@ spec:
           # it durably (a kubectl patch on the managed Deployment gets reverted).
           annotations:
             karpenter.sh/do-not-disrupt: "true"
-          {{- if .Values.gatewayConfig.loadBalancer.availabilityZone }}
-          # Pin envoy-proxy pods to the NLB's AZ. NLBs only register targets that
-          # live in the AZs the LB is provisioned in; with a single EIP we have
-          # only one AZ enabled, so out-of-zone proxy pods become un-routable.
+          {{- if or .Values.coreServices.nodeSelector .Values.gatewayConfig.loadBalancer.availabilityZone }}
           nodeSelector:
+            {{- range $k, $v := .Values.coreServices.nodeSelector }}
+            {{ $k }}: {{ $v }}
+            {{- end }}
+            {{- if .Values.gatewayConfig.loadBalancer.availabilityZone }}
+            # Pin envoy-proxy pods to the NLB's AZ. NLBs only register targets that
+            # live in the AZs the LB is provisioned in; with a single EIP we have
+            # only one AZ enabled, so out-of-zone proxy pods become un-routable.
             topology.kubernetes.io/zone: {{ .Values.gatewayConfig.loadBalancer.availabilityZone | quote }}
+            {{- end }}
+          {{- end }}
+          {{- with .Values.coreServices.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 10 }}
           {{- end }}
 {{- end }}
 {{- end }}

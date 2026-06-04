@@ -29,8 +29,6 @@ spec:
       app: {{ .Release.Name }}-{{ .Values.fileService.name }}
   template:
     metadata:
-      annotations:
-        karpenter.sh/do-not-disrupt: "true"
       labels:
         app: {{ .Release.Name }}-{{ .Values.fileService.name }}
     spec:

@@ -26,6 +26,14 @@ global:
   security:
     allowInsecureImages: true
 
+# Placement for always-on singleton services. Empty by default (local/dev has no
+# dedicated pool); an environment override (e.g. override-eks-uci-oit.yaml) sets a
+# nodeSelector + tolerations to pin these onto a dedicated core-services node pool
+# so they never land on — and pin — a transient general-purpose / CU node.
+coreServices:
+  nodeSelector: {}
+  tolerations: []
+
 # Persistence Configuration
 # This controls how Persistent Volumes (PVs) and Persistent Volume Claims (PVCs) are managed
 #
@@ -142,7 +150,9 @@ lakekeeper:
     enabled: false
   internalOpenFGA: false
   catalog:
-    # Keep the Iceberg REST catalog off Karpenter's consolidation path.
+    # Keep the Iceberg REST catalog off Karpenter's consolidation path. Lakekeeper
+    # is the catalog for all execution result storage (RESULT/CONSOLE/STATS/STATE
+    # Iceberg tables); evicting this singleton interrupts result read/write.
     podAnnotations:
       karpenter.sh/do-not-disrupt: "true"
     replicas: 1
