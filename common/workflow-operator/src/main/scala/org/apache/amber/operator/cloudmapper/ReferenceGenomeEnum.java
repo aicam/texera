@@ -1,5 +1,6 @@
 package org.apache.amber.operator.cloudmapper;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 public enum ReferenceGenomeEnum {
@@ -22,5 +23,18 @@ public enum ReferenceGenomeEnum {
     @JsonValue
     public String getName() {
         return this.name;
+    }
+
+    // Deserialize from the @JsonValue label (e.g. "GRCh38"). Required because
+    // Dropwizard's FuzzyEnumModule otherwise matches on the constant name
+    // (HUMAN_GRCh38) and ignores @JsonValue, breaking operator deserialization.
+    @JsonCreator
+    public static ReferenceGenomeEnum fromValue(String value) {
+        for (ReferenceGenomeEnum genome : values()) {
+            if (genome.name.equals(value)) {
+                return genome;
+            }
+        }
+        throw new IllegalArgumentException("Unknown reference genome: " + value);
     }
 }
