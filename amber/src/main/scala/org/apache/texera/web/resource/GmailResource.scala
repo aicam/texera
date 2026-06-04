@@ -52,6 +52,7 @@ object GmailResource {
   private def userDao = new UserDao(context.configuration)
 
   private lazy val senderGmail: String = UserSystemConfig.gmail
+  private lazy val senderName: String = UserSystemConfig.projectName
   private val smtpProperties = Map(
     "mail.smtp.host" -> "smtp.gmail.com",
     "mail.smtp.port" -> "465",
@@ -80,7 +81,7 @@ object GmailResource {
       recipientEmail: String
   ): MimeMessage = {
     val email = new MimeMessage(session)
-    email.setFrom(new InternetAddress(senderGmail))
+    email.setFrom(new InternetAddress(senderGmail, senderName))
     email.addRecipient(Message.RecipientType.TO, new InternetAddress(recipientEmail))
     email.setSubject(emailMessage.subject)
     email.setText(emailMessage.content)
