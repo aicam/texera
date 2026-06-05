@@ -285,31 +285,13 @@
         #reveal
         class="reveal cta-inner">
         <h2 class="cta-title">Build your next data science and AI project on dkNET-AI</h2>
-        <ng-container *ngIf="(isLogin$ | async); else ctaSignin">
-          <button
-            type="button"
-            class="btn btn--primary btn--lg"
-            (click)="getStarted()">
-            Get started
-          </button>
-        </ng-container>
-        <ng-template #ctaSignin>
-          <div class="cta-google cta-google--lg">
-            <button
-              type="button"
-              class="btn btn--primary btn--lg"
-              (click)="getStarted()">
-              Get started
-            </button>
-            <asl-google-signin-button
-              *ngIf="config.env.googleLogin"
-              class="cta-google__overlay"
-              type="standard"
-              size="large"
-              shape="pill"
-              [width]="260"></asl-google-signin-button>
-          </div>
-        </ng-template>
+        <a
+          class="btn btn--primary btn--lg"
+          href="https://www.youtube.com/playlist?list=PLArcTXMmhvqphW9ykn52csscYKOk6E2JY"
+          target="_blank"
+          rel="noopener">
+          Tutorial Videos
+        </a>
         <p class="cta-powered">
           Powered by
           <a
