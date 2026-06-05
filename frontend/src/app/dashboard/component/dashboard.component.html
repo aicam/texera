@@ -29,16 +29,21 @@
       nzMode="inline"
       nzSelectable="false">
       <li class="logo-section">
-        <img
-          *ngIf="miniLogo && isCollapsed"
-          alt="mini-logo"
-          [src]="miniLogo"
-          class="collapsed-logo" />
-        <img
-          *ngIf="logo && !isCollapsed"
-          alt="logo"
-          height="50"
-          [src]="logo" />
+        <a
+          routerLink="/"
+          class="logo-link"
+          title="Go to landing page">
+          <img
+            *ngIf="miniLogo && isCollapsed"
+            alt="mini-logo"
+            [src]="miniLogo"
+            class="collapsed-logo" />
+          <img
+            *ngIf="logo && !isCollapsed"
+            alt="logo"
+            height="50"
+            [src]="logo" />
+        </a>
       </li>
 
       <li

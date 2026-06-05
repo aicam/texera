@@ -86,16 +86,6 @@ export class AboutPageComponent implements OnInit, AfterViewInit, OnDestroy {
       accent: "magenta",
     },
     {
-      eyebrow: "Guided Analysis",
-      title: "Single-cell RNA sequencing analysis",
-      body:
-        "Follow a complete, guided example of taking a single-cell RNA-seq dataset from raw data through " +
-        "analysis to results, entirely in the GUI-based workflow editor.",
-      image: "assets/about/R_udf.png",
-      alt: "Single-cell RNA-seq analysis built with R user-defined functions in the workflow editor",
-      accent: "cyan",
-    },
-    {
       eyebrow: "Scalable Alignment",
       title: "CloudBioMapper for sequence alignment",
       body:
@@ -103,6 +93,16 @@ export class AboutPageComponent implements OnInit, AfterViewInit, OnDestroy {
         "in parallel with pay-as-you-go scaling.",
       image: "assets/about/cloudbiomapper.png",
       alt: "CloudBioMapper launching on-demand cloud clusters for parallel sequence alignment",
+      accent: "cyan",
+    },
+    {
+      eyebrow: "Guided Analysis",
+      title: "Single-cell RNA sequencing analysis",
+      body:
+        "Follow a complete, guided example of taking a single-cell RNA-seq dataset from raw data through " +
+        "analysis to results, entirely in the GUI-based workflow editor.",
+      image: "assets/about/R_udf.png",
+      alt: "Single-cell RNA-seq analysis built with R user-defined functions in the workflow editor",
       accent: "magenta",
     },
   ];

@@ -127,6 +127,13 @@ button {
   align-items: center;
 }
 
+.logo-link {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+}
+
 .collapsed-logo {
   width: 32px;
   height: 32px;
