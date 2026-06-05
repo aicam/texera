@@ -421,7 +421,9 @@
 
 .hero-text {
   flex: 1 1 560px;
-  max-width: 640px;
+  // Widened to fit the larger video; the title/paragraph keep their own
+  // narrower reading width below so only the video grows.
+  max-width: 975px;
   color: #fff;
 }
 
@@ -431,6 +433,7 @@
   line-height: 1.15;
   letter-spacing: 0.2px;
   margin: 0 0 28px 0;
+  max-width: 640px;
   color: #fff;
 }
 
@@ -439,6 +442,7 @@
   line-height: 1.75;
   color: #b6e0ff;
   margin: 0 0 24px 0;
+  max-width: 640px;
 }
 
 // Intro video, below the title/paragraph and over the bg image. Kept to a
@@ -446,7 +450,7 @@
 .hero-video {
   position: relative;
   width: 100%;
-  max-width: 520px;
+  max-width: 975px;
   aspect-ratio: 16 / 9;
   border-radius: 12px;
   overflow: hidden;
