@@ -18,7 +18,7 @@
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { StreamableHTTPClientTransport, StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
@@ -96,12 +96,27 @@ export function parseMcpServerConfigs(rawConfig: string | undefined): RemoteMcpS
   return configs.filter(config => config.enabled);
 }
 
+/**
+ * True when a remote MCP error means the server no longer holds our session. MCP sessions live
+ * only in the server's memory, so the server answers HTTP 404 ("session not found") after it
+ * restarts, or — at more than one replica without session affinity — when a request reaches a pod
+ * that never had the session. The cached client keeps replaying the dead session id, so without
+ * recovery every subsequent call fails until agent-service itself restarts.
+ */
+export function isSessionLostError(error: unknown): boolean {
+  if (error instanceof StreamableHTTPError && error.code === 404) return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /session not found/i.test(message);
+}
+
 export class RemoteMcpToolRegistry {
   private static instance: RemoteMcpToolRegistry | undefined;
 
   private initialized = false;
   private initializing: Promise<void> | undefined;
   private sessions = new Map<string, RemoteMcpServerSession>();
+  // In-flight reconnect per server, so a burst of failed calls shares one reconnect.
+  private reconnecting = new Map<string, Promise<RemoteMcpServerSession>>();
   private toolDefinitions = new Map<string, RemoteMcpToolDefinition>();
 
   static getInstance(): RemoteMcpToolRegistry {
@@ -137,17 +152,57 @@ export class RemoteMcpToolRegistry {
       throw new Error(`Remote MCP server is not connected: ${definition.serverName}`);
     }
 
+    try {
+      return await this.invokeTool(session, definition.remoteToolName, args, abortSignal);
+    } catch (error) {
+      if (!isSessionLostError(error)) throw error;
+      // The server dropped our session (it restarted, or — at >1 replica without affinity — the
+      // call hit a pod that never had it). Re-establish it once and retry, so a stale session no
+      // longer breaks every call until agent-service restarts. A second loss is left to propagate.
+      log.warn({ serverName: definition.serverName, toolName }, "remote MCP session lost; reconnecting and retrying once");
+      const fresh = await this.reconnect(definition.serverName, session);
+      return this.invokeTool(fresh, definition.remoteToolName, args, abortSignal);
+    }
+  }
+
+  private async invokeTool(
+    session: RemoteMcpServerSession,
+    remoteToolName: string,
+    args: Record<string, unknown>,
+    abortSignal?: AbortSignal
+  ): Promise<CallToolResult> {
     return (await session.client.callTool(
-      {
-        name: definition.remoteToolName,
-        arguments: args,
-      },
+      { name: remoteToolName, arguments: args },
       CallToolResultSchema,
-      {
-        signal: abortSignal,
-        timeout: env.MCP_REQUEST_TIMEOUT_MS,
-      }
+      { signal: abortSignal, timeout: env.MCP_REQUEST_TIMEOUT_MS }
     )) as CallToolResult;
+  }
+
+  /**
+   * Re-establish a dropped session and replace the cached one, returning the live session.
+   * Concurrent callers for the same server share one reconnect; a caller whose session was
+   * already refreshed by someone else gets the current session without reconnecting again.
+   */
+  private async reconnect(serverName: string, stale: RemoteMcpServerSession): Promise<RemoteMcpServerSession> {
+    const current = this.sessions.get(serverName);
+    if (current && current !== stale) return current;
+
+    const inflight = this.reconnecting.get(serverName);
+    if (inflight) return inflight;
+
+    const promise = (async () => {
+      const fresh = await this.openSession(stale.config);
+      this.sessions.set(serverName, fresh);
+      // Best-effort tear-down of the dead session; closing it may DELETE a session id the
+      // server no longer has, which is harmless.
+      void stale.client.close().catch(() => {});
+      return fresh;
+    })().finally(() => {
+      this.reconnecting.delete(serverName);
+    });
+
+    this.reconnecting.set(serverName, promise);
+    return promise;
   }
 
   async close(): Promise<void> {
@@ -180,27 +235,26 @@ export class RemoteMcpToolRegistry {
     log.info({ serverCount: this.sessions.size, toolCount: this.toolDefinitions.size }, "remote MCP tools initialized");
   }
 
+  // Create and connect a fresh MCP client/transport for a server (no tool registration).
+  // Shared by the initial connect and by reconnect-after-session-loss.
+  private async openSession(config: RemoteMcpServerConfig): Promise<RemoteMcpServerSession> {
+    const client = new Client(
+      { name: `texera-agent-service-${config.name}`, version: "0.1.0" },
+      { capabilities: {} }
+    );
+    const transport = new StreamableHTTPClientTransport(new URL(config.url), {
+      requestInit: { headers: buildHeaders(config) },
+    });
+    await client.connect(transport, { timeout: env.MCP_REQUEST_TIMEOUT_MS });
+    return { config, client, transport };
+  }
+
   private async connectServer(config: RemoteMcpServerConfig): Promise<void> {
     try {
-      const client = new Client(
-        {
-          name: `texera-agent-service-${config.name}`,
-          version: "0.1.0",
-        },
-        {
-          capabilities: {},
-        }
-      );
-      const transport = new StreamableHTTPClientTransport(new URL(config.url), {
-        requestInit: {
-          headers: buildHeaders(config),
-        },
-      });
+      const session = await this.openSession(config);
+      const listedTools = await session.client.listTools(undefined, { timeout: env.MCP_REQUEST_TIMEOUT_MS });
 
-      await client.connect(transport, { timeout: env.MCP_REQUEST_TIMEOUT_MS });
-      const listedTools = await client.listTools(undefined, { timeout: env.MCP_REQUEST_TIMEOUT_MS });
-
-      this.sessions.set(config.name, { config, client, transport });
+      this.sessions.set(config.name, session);
       const prefix = normalizeToolNameSegment(config.toolPrefix ?? config.name);
 
       for (const toolDefinition of listedTools.tools) {

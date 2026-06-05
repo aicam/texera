@@ -29,7 +29,7 @@ import { type AgentMetadata, type AgentMetadataStore, PostgresAgentMetadataStore
 import { WorkflowSystemMetadata } from "./agent/util/workflow-system-metadata";
 import { env } from "./config/env";
 import { createLogger } from "./logger";
-import { DEFAULT_AGENT_NAME } from "./types/agent";
+import { DEFAULT_AGENT_NAME, AgentState } from "./types/agent";
 import type { WorkflowContent } from "./types/workflow";
 
 const log = createLogger("Server");
@@ -37,6 +37,37 @@ const wsLog = createLogger("WS");
 import type { AgentInfo, AgentTaskContext, CreateAgentRequest, ReActStep, UpdateAgentRequest } from "./types/agent";
 
 const agentStore = new Map<string, TexeraAgent>();
+// Last access time (ms) per cached agent — drives idle eviction (startAgentStoreEviction).
+const agentLastAccessed = new Map<string, number>();
+function touchAgent(agentId: string): void {
+  agentLastAccessed.set(agentId, Date.now());
+}
+
+// Periodically drop in-memory agents that are idle, have no live WebSockets, and are not
+// running. Their full state lives in Postgres (agent.react_steps), so the next request
+// rehydrates them transparently — this just bounds per-pod memory, which otherwise grows
+// for every agent the pod ever touched (the Map was never evicted). Disable with
+// AGENT_IDLE_EVICTION_MS=0.
+function startAgentStoreEviction(): void {
+  if (env.AGENT_IDLE_EVICTION_MS <= 0) return;
+  const timer = setInterval(() => {
+    const now = Date.now();
+    for (const [agentId, agent] of agentStore) {
+      if (agent.getState() !== AgentState.AVAILABLE) continue; // running/stopping — keep
+      if (agent.getWebsockets().size > 0) continue; // live client(s) — keep
+      if (now - (agentLastAccessed.get(agentId) ?? 0) < env.AGENT_IDLE_EVICTION_MS) continue;
+      agentStore.delete(agentId);
+      agentLastAccessed.delete(agentId);
+      log.info({ agentId }, "evicted idle agent from in-memory cache (state persisted in DB)");
+    }
+    // Prune last-access entries whose agent is already gone (e.g. deleted via REST).
+    for (const agentId of agentLastAccessed.keys()) {
+      if (!agentStore.has(agentId)) agentLastAccessed.delete(agentId);
+    }
+  }, env.AGENT_EVICTION_SWEEP_MS);
+  timer.unref?.(); // don't keep the process alive just for the sweep
+}
+
 let agentMetadataStore: AgentMetadataStore = new PostgresAgentMetadataStore();
 type AgentMetadataUpdate = Pick<UpdateAgentRequest, "name" | "modelType">;
 
@@ -93,6 +124,7 @@ async function createAgentInstance(options: {
   await agent.initialize();
 
   agentStore.set(agentId, agent);
+  touchAgent(agentId);
   log.info({ agentId }, "created agent");
 
   return { agentId, agent };
@@ -124,6 +156,7 @@ function getAgentInfo(agentId: string, agent: TexeraAgent): AgentInfo {
 async function getAgent(agentId: string, metadata?: AgentMetadata): Promise<TexeraAgent> {
   const existing = agentStore.get(agentId);
   if (existing) {
+    touchAgent(agentId);
     return existing;
   }
 
@@ -761,6 +794,7 @@ async function initializeServices() {
 export async function start() {
   await initializeServices();
   const app = buildApp().listen(env.PORT);
+  startAgentStoreEviction();
   printStartupMessage(app);
   return app;
 }

@@ -56,6 +56,12 @@ const EnvSchema = z.object({
   // list (which is always excluded — an empty value here still hides the built-ins). These stay
   // available to GUI users; this only narrows what the agent sees/suggests.
   AGENT_EXTRA_EXCLUDED_OPERATOR_TYPES: z.string().optional(),
+  // In-memory agentStore eviction. Agents are cached per pod and never evicted on their own,
+  // so a long-lived pod accumulates every agent it ever touched. A periodic sweep drops agents
+  // that are idle past AGENT_IDLE_EVICTION_MS, have no live WebSockets, and are not running;
+  // their state is in Postgres, so the next access rehydrates transparently. 0 disables eviction.
+  AGENT_IDLE_EVICTION_MS: z.coerce.number().int().nonnegative().default(1_800_000), // 30 min
+  AGENT_EVICTION_SWEEP_MS: z.coerce.number().int().positive().default(300_000), // 5 min
 
   STORAGE_JDBC_URL: z.string().default("jdbc:postgresql://localhost:5432/texera_db?currentSchema=texera_db,public"),
   STORAGE_JDBC_USERNAME: z.string().default("postgres"),

@@ -17,6 +17,7 @@
 
 {{- if .Values.agentService.enabled }}
 {{- $promptMounted := or .Values.agentService.systemPromptOverride (.Files.Get "files/system-prompt.md") }}
+{{- $agentPods := int (.Values.agentService.numOfPods | default 1) }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -31,6 +32,16 @@ spec:
       app: {{ .Release.Name }}-{{ .Values.agentService.name }}
   template:
     metadata:
+{{- if le $agentPods 1 }}
+      annotations:
+        # Single replica (numOfPods <= 1): the in-memory agentStore + per-pod ReAct
+        # runs/WebSockets make this pod a stateful singleton, so keep it off Karpenter's
+        # consolidation path (evicting the only pod drops every live run) and out of
+        # app-service-pdbs.yaml (a PDB is meaningless on one replica). With numOfPods > 1,
+        # session-affinity routing (agent-service-backend-traffic-policy.yaml) makes pods
+        # evictable: this annotation is dropped and a PDB (maxUnavailable 1) is added instead.
+        karpenter.sh/do-not-disrupt: "true"
+{{- end }}
       labels:
         app: {{ .Release.Name }}-{{ .Values.agentService.name }}
     spec:

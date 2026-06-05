@@ -43,6 +43,11 @@ interface BioMcpRuntime {
 const PORT = Number(process.env.PORT || 3010);
 const MCP_PATH = process.env.MCP_PATH || "/mcp";
 const API_KEY = process.env.BIOMCP_API_KEY || process.env.API_KEY;
+// MCP Streamable HTTP keeps a long-lived SSE stream (idle between events) and some tools
+// (e.g. PubMed search) run longer than 10s. Bun's default 10s idleTimeout closes the
+// connection mid-flight, which fires onsessionclosed -> deletes the in-memory session, so the
+// client's next POST gets "MCP session not found". Raise it. Bun max is 255s; 0 disables.
+const IDLE_TIMEOUT_SECONDS = Number(process.env.IDLE_TIMEOUT_SECONDS || 255);
 
 function errorResult(message: string): CallToolResult {
   return {
@@ -266,6 +271,7 @@ if (import.meta.main) {
   featureFlags.logConfiguration();
   Bun.serve({
     port: PORT,
+    idleTimeout: IDLE_TIMEOUT_SECONDS,
     fetch: createFetchHandler(),
   });
   console.log(`BioMCP service listening on http://localhost:${PORT}${MCP_PATH}`);

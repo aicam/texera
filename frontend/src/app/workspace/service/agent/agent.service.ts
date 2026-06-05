@@ -252,19 +252,18 @@ export class AgentService {
   }
 
   /**
-   * Build HTTP headers for agent-service requests.
-   * Includes the user's bearer token (used for access control when the agent
-   * service has AGENT_AUTH_REQUIRED enabled) and X-Agent-Workflow-Id for
-   * consistent hash routing in k8s.
+   * Build HTTP headers for agent-service requests, carrying the user's bearer
+   * token (used for access control when the agent service has AGENT_AUTH_REQUIRED
+   * enabled). Pod affinity in k8s is handled by a session cookie the gateway
+   * sets on agent-service responses (see agent-service-backend-traffic-policy.yaml),
+   * not a request header — a header can't pin the /react WebSocket since browsers
+   * can't set headers on a WS upgrade.
    */
-  private agentHeaders(agentId?: string): { headers: HttpHeaders } {
+  private agentHeaders(): { headers: HttpHeaders } {
     let headers = new HttpHeaders();
     const token = AuthService.getAccessToken();
     if (token) {
       headers = headers.set("Authorization", `Bearer ${token}`);
-    }
-    if (agentId) {
-      headers = headers.set("X-Agent-Workflow-Id", agentId);
     }
     return { headers };
   }
@@ -905,7 +904,7 @@ export class AgentService {
       }
 
       // Fetch from API if not in cache
-      return this.http.get<ApiAgentInfo>(`${this.AGENT_API_BASE}/agents/${agentId}`, this.agentHeaders(agentId)).pipe(
+      return this.http.get<ApiAgentInfo>(`${this.AGENT_API_BASE}/agents/${agentId}`, this.agentHeaders()).pipe(
         map(response => {
           const agentInfo = this.apiAgentToAgentInfo(response);
           this.agents.set(agentInfo.id, agentInfo);
@@ -918,7 +917,7 @@ export class AgentService {
 
   public updateAgent(agentId: string, updates: Partial<Pick<AgentInfo, "name" | "modelType">>): Observable<AgentInfo> {
     return this.http
-      .patch<ApiAgentInfo>(`${this.AGENT_API_BASE}/agents/${agentId}`, updates, this.agentHeaders(agentId))
+      .patch<ApiAgentInfo>(`${this.AGENT_API_BASE}/agents/${agentId}`, updates, this.agentHeaders())
       .pipe(
         map(response => {
           const agentInfo = this.apiAgentToAgentInfo(response);
@@ -963,7 +962,7 @@ export class AgentService {
    */
   public deleteAgent(agentId: string): Observable<boolean> {
     return this.http
-      .delete<{ deleted: boolean }>(`${this.AGENT_API_BASE}/agents/${agentId}`, this.agentHeaders(agentId))
+      .delete<{ deleted: boolean }>(`${this.AGENT_API_BASE}/agents/${agentId}`, this.agentHeaders())
       .pipe(
         map(response => {
           if (response.deleted) {
@@ -1082,7 +1081,7 @@ export class AgentService {
    */
   public getReActSteps(agentId: string): Observable<ReActStep[]> {
     return this.http
-      .get<ApiReActStepsResponse>(`${this.AGENT_API_BASE}/agents/${agentId}/react-steps`, this.agentHeaders(agentId))
+      .get<ApiReActStepsResponse>(`${this.AGENT_API_BASE}/agents/${agentId}/react-steps`, this.agentHeaders())
       .pipe(
         map(response => response.steps.map((s: any) => this.convertApiReActStep(s))),
         catchError(() => of([]))
@@ -1093,7 +1092,7 @@ export class AgentService {
    * Clear all messages for an agent.
    */
   public clearMessages(agentId: string): void {
-    this.http.post(`${this.AGENT_API_BASE}/agents/${agentId}/clear`, {}, this.agentHeaders(agentId)).subscribe({
+    this.http.post(`${this.AGENT_API_BASE}/agents/${agentId}/clear`, {}, this.agentHeaders()).subscribe({
       next: () => {
         const tracking = this.agentStateTracking.get(agentId);
         if (tracking) {
@@ -1120,7 +1119,7 @@ export class AgentService {
       }
     } else {
       // Fallback to HTTP if WebSocket not available
-      this.http.post(`${this.AGENT_API_BASE}/agents/${agentId}/stop`, {}, this.agentHeaders(agentId)).subscribe({
+      this.http.post(`${this.AGENT_API_BASE}/agents/${agentId}/stop`, {}, this.agentHeaders()).subscribe({
         error: (error: unknown) => {
           console.error(`Error stopping agent ${agentId}:`, error);
         },
@@ -1177,7 +1176,7 @@ export class AgentService {
    * The backend broadcasts headChange + visible steps via WebSocket to all clients.
    */
   public checkoutStep(agentId: string, stepId: string): Observable<any> {
-    return this.http.post(`${this.AGENT_API_BASE}/agents/${agentId}/checkout`, { stepId }, this.agentHeaders(agentId));
+    return this.http.post(`${this.AGENT_API_BASE}/agents/${agentId}/checkout`, { stepId }, this.agentHeaders());
   }
 
   /**
@@ -1324,7 +1323,7 @@ export class AgentService {
     return this.http
       .post<{
         steps: ReActStep[];
-      }>(`${this.AGENT_API_BASE}/agents/${agentId}/steps-by-operators`, { operatorIds }, this.agentHeaders(agentId))
+      }>(`${this.AGENT_API_BASE}/agents/${agentId}/steps-by-operators`, { operatorIds }, this.agentHeaders())
       .pipe(
         map(response => ({
           steps: response.steps.map((s: any) => this.convertApiReActStep(s)),
@@ -1407,7 +1406,7 @@ export class AgentService {
     this.http
       .get<{ results: Record<string, OperatorResultSummary> }>(
         `${this.AGENT_API_BASE}/agents/${agentId}/operator-results`,
-        this.agentHeaders(agentId)
+        this.agentHeaders()
       )
       .pipe(catchError(() => of({ results: {} as Record<string, OperatorResultSummary> })))
       .subscribe(response => {

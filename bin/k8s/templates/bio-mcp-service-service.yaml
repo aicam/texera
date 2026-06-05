@@ -23,6 +23,16 @@ metadata:
   namespace: {{ .Release.Namespace }}
 spec:
   type: {{ .Values.bioMcpService.service.type }}
+  # MCP sessions live only in the pod that created them (in-memory), so every request for a
+  # session must reach that pod — otherwise the server answers 404 "MCP session not found".
+  # The client is agent-service (in-cluster, one fixed source IP per pod), so ClientIP affinity
+  # pins each agent-service pod to one bio-mcp pod, which is enough to run bio-mcp on >1 pod.
+  # If a bio-mcp pod restarts (or the affinity lapses after idle), agent-service re-initializes
+  # the session on the next call and re-pins (see RemoteMcpToolRegistry session recovery).
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: {{ .Values.bioMcpService.sessionAffinityTimeoutSeconds | default 10800 }}
   selector:
     app: {{ .Release.Name }}-{{ .Values.bioMcpService.name }}
   ports:

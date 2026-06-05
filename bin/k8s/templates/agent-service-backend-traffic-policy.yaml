@@ -15,9 +15,16 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Agents are stateful and held in memory per pod, so all requests for a given
-# workflow must reach the same replica. The client stamps X-Agent-Workflow-Id on
-# every agent request; pin routing to it with a consistent hash.
+# Agents are stateful and held in memory per pod, so all requests for a browser
+# session must reach the same replica. A header hash can't pin the /react
+# WebSocket (browsers can't set custom headers on a WS upgrade), so we hash on a
+# session cookie instead: Envoy auto-generates it (ttl is what triggers generation)
+# on the first agent-service response and the browser then replays it on every
+# subsequent request INCLUDING the WS upgrade — so REST control calls and the WS
+# run land on the same pod. attributes.Path "/" is REQUIRED: without it the
+# generated cookie's path defaults to the request path (e.g. /api/agents/<id>/react)
+# and the browser won't send it back on other /api/agents/... paths, breaking
+# affinity across REST vs WS (envoyproxy/envoy#10468). This makes >1 replica safe.
 {{- if .Values.agentService.enabled }}
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
@@ -32,7 +39,10 @@ spec:
   loadBalancer:
     type: ConsistentHash
     consistentHash:
-      type: Header
-      header:
-        name: X-Agent-Workflow-Id
+      type: Cookie
+      cookie:
+        name: X-Agent-Affinity
+        ttl: {{ .Values.agentService.affinityCookieTtl | default "1h" | quote }}
+        attributes:
+          Path: "/"
 {{- end }}

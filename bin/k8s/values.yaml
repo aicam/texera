@@ -265,7 +265,19 @@ accessControlService:
 agentService:
   enabled: true
   name: agent-service
+  # Safe to scale >1. Agents are held in memory per pod (server.ts `agentStore`) and the
+  # ReAct run executes on the pod the /react WebSocket lands on, so all requests for a
+  # browser session MUST reach the same pod. That stickiness is provided by a gateway
+  # session cookie (agent-service-backend-traffic-policy.yaml) which — unlike a header —
+  # is replayed on the WS upgrade too, so the run pod and the REST-control pod stay in
+  # sync. At numOfPods > 1 the chart also swaps do-not-disrupt for a PDB (see
+  # agent-service-deployment.yaml / app-service-pdbs.yaml). Caveat: affinity is per
+  # browser session, so the rare case of the SAME agent driven from two different
+  # browsers at once can split across pods (last-writer-wins on react_steps in Postgres).
   numOfPods: 1
+  # TTL (Max-Age) of the gateway-generated affinity cookie; must outlast a typical agent
+  # session and match the Envoy duration regex (e.g. 1h, 3600s). Used by the BackendTrafficPolicy.
+  affinityCookieTtl: "1h"
   imageName: texera-agent-service
   service:
     type: ClusterIP
@@ -299,8 +311,21 @@ agentService:
 bioMcpService:
   enabled: true
   name: bio-mcp-service
+  # Safe to scale >1. MCP sessions are held in memory per pod, so the Service uses ClientIP
+  # affinity (bio-mcp-service-service.yaml) to pin each agent-service pod to one bio-mcp pod,
+  # and agent-service re-initializes the session if a pod restarts (RemoteMcpToolRegistry
+  # recovery). At >1 a PDB is added (app-service-pdbs.yaml). Distribution is per agent-service
+  # pod, so throughput scales as agent-service scales.
   numOfPods: 1
+  # ClientIP affinity timeout (seconds): how long a pod stays pinned after its last request.
+  # Longer than a typical idle gap so a session isn't re-pinned (and re-initialized) needlessly.
+  sessionAffinityTimeoutSeconds: 10800
   imageName: texera-bio-mcp-service
+  # Bun.serve idleTimeout (seconds). Bun's default 10s tears down slow in-flight tool calls
+  # (PubMed can exceed 10s) and long-idle MCP SSE streams mid-flight. 255 is Bun's max; 0
+  # disables. (Note: this does NOT cause "MCP session not found" — that's a dropped session,
+  # handled by agent-service session recovery + the ClientIP affinity above.)
+  idleTimeoutSeconds: 255
   service:
     type: ClusterIP
     port: 3010
