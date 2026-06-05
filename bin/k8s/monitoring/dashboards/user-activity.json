@@ -1,0 +1,190 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "Computing units created",
+      "type": "stat",
+      "id": 1,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT count(*) AS value FROM texera_db.workflow_computing_unit"}],
+      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "orange"}]}, "unit": "short"}}
+    },
+    {
+      "title": "Active computing units",
+      "type": "stat",
+      "id": 2,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT count(*) AS value FROM texera_db.workflow_computing_unit WHERE terminate_time IS NULL"}],
+      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green"}]}, "unit": "short"}}
+    },
+    {
+      "title": "Datasets created",
+      "type": "stat",
+      "id": 3,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT count(*) AS value FROM texera_db.dataset"}],
+      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "yellow"}]}, "unit": "short"}}
+    },
+    {
+      "title": "Workflows created",
+      "type": "stat",
+      "id": 4,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT count(*) AS value FROM texera_db.workflow"}],
+      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green"}]}, "unit": "short"}}
+    },
+    {
+      "title": "Total executions",
+      "type": "stat",
+      "id": 5,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 0},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT count(*) AS value FROM texera_db.workflow_executions"}],
+      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "purple"}]}, "unit": "short"}}
+    },
+    {
+      "title": "Failed executions",
+      "type": "stat",
+      "id": 6,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 0},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT count(*) AS value FROM texera_db.workflow_executions WHERE status = 4"}],
+      "options": {"reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none", "justifyMode": "auto"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "red"}]}, "unit": "short"}}
+    },
+
+    {"title": "Computing units (user created)", "type": "row", "id": 100, "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 4}, "panels": []},
+    {
+      "title": "Computing units per user",
+      "type": "table",
+      "id": 11,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 5},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT u.email AS user_email, count(*) AS total_cus, count(*) FILTER (WHERE c.terminate_time IS NULL) AS active_cus FROM texera_db.workflow_computing_unit c JOIN texera_db.\"user\" u ON u.uid = c.uid GROUP BY u.email ORDER BY total_cus DESC LIMIT 30"}],
+      "fieldConfig": {"defaults": {"custom": {"align": "auto"}}}
+    },
+    {
+      "title": "Computing units created over time",
+      "type": "timeseries",
+      "id": 12,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 5},
+      "targets": [{"refId": "A", "format": "time_series", "rawQuery": true, "rawSql": "SELECT date_trunc('day', creation_time) AS time, count(*) AS \"computing units\" FROM texera_db.workflow_computing_unit WHERE $__timeFilter(creation_time) GROUP BY 1 ORDER BY 1"}],
+      "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "bars", "fillOpacity": 60, "stacking": {"mode": "none"}}}}
+    },
+    {
+      "title": "Recent computing units",
+      "type": "table",
+      "id": 13,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 5},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT c.cuid, u.email AS user_email, c.name, c.type::text AS type, c.creation_time AS created, CASE WHEN c.terminate_time IS NULL THEN 'active' ELSE 'terminated' END AS state FROM texera_db.workflow_computing_unit c JOIN texera_db.\"user\" u ON u.uid = c.uid ORDER BY c.creation_time DESC LIMIT 30"}],
+      "fieldConfig": {"defaults": {"custom": {"align": "auto"}}}
+    },
+
+    {"title": "Datasets (user created)", "type": "row", "id": 101, "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 13}, "panels": []},
+    {
+      "title": "Datasets per user",
+      "type": "table",
+      "id": 21,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 14},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT u.email AS user_email, count(*) AS datasets FROM texera_db.dataset d JOIN texera_db.\"user\" u ON u.uid = d.owner_uid GROUP BY u.email ORDER BY datasets DESC LIMIT 30"}],
+      "fieldConfig": {"defaults": {"custom": {"align": "auto"}}}
+    },
+    {
+      "title": "Datasets created over time",
+      "type": "timeseries",
+      "id": 22,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 14},
+      "targets": [{"refId": "A", "format": "time_series", "rawQuery": true, "rawSql": "SELECT date_trunc('day', creation_time) AS time, count(*) AS \"datasets\" FROM texera_db.dataset WHERE $__timeFilter(creation_time) GROUP BY 1 ORDER BY 1"}],
+      "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "bars", "fillOpacity": 60, "stacking": {"mode": "none"}}}}
+    },
+    {
+      "title": "Recent datasets",
+      "type": "table",
+      "id": 23,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 14},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT d.did, u.email AS owner, d.name, d.is_public, d.creation_time AS created FROM texera_db.dataset d JOIN texera_db.\"user\" u ON u.uid = d.owner_uid ORDER BY d.creation_time DESC LIMIT 30"}],
+      "fieldConfig": {"defaults": {"custom": {"align": "auto"}}}
+    },
+
+    {"title": "Workflows (user created)", "type": "row", "id": 102, "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 22}, "panels": []},
+    {
+      "title": "Workflows per user",
+      "type": "table",
+      "id": 31,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 23},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT u.email AS user_email, u.name AS name, count(wou.wid) AS workflows FROM texera_db.\"user\" u JOIN texera_db.workflow_of_user wou ON wou.uid = u.uid GROUP BY u.uid, u.email, u.name ORDER BY workflows DESC LIMIT 30"}],
+      "fieldConfig": {"defaults": {"custom": {"align": "auto"}}}
+    },
+    {
+      "title": "Workflows created over time",
+      "type": "timeseries",
+      "id": 32,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 23},
+      "targets": [{"refId": "A", "format": "time_series", "rawQuery": true, "rawSql": "SELECT date_trunc('day', creation_time) AS time, count(*) AS \"workflows\" FROM texera_db.workflow WHERE $__timeFilter(creation_time) GROUP BY 1 ORDER BY 1"}],
+      "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "bars", "fillOpacity": 60, "stacking": {"mode": "none"}}}}
+    },
+
+    {"title": "Workflow executions & status", "type": "row", "id": 103, "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 31}, "panels": []},
+    {
+      "title": "Executions by status over time",
+      "type": "timeseries",
+      "id": 41,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 8, "w": 16, "x": 0, "y": 32},
+      "targets": [{"refId": "A", "format": "time_series", "rawQuery": true, "rawSql": "SELECT date_trunc('hour', starting_time) AS time, CASE status WHEN 0 THEN 'ready' WHEN 1 THEN 'running' WHEN 2 THEN 'paused' WHEN 3 THEN 'completed' WHEN 4 THEN 'failed' WHEN 5 THEN 'killed' ELSE 'other' END AS metric, count(*) AS value FROM texera_db.workflow_executions WHERE $__timeFilter(starting_time) GROUP BY 1, 2 ORDER BY 1"}],
+      "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "bars", "fillOpacity": 70, "stacking": {"mode": "normal"}}}}
+    },
+    {
+      "title": "Executions per user (total / failed)",
+      "type": "table",
+      "id": 42,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 32},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT u.email AS user_email, count(*) AS total, count(*) FILTER (WHERE e.status = 3) AS completed, count(*) FILTER (WHERE e.status = 4) AS failed, count(*) FILTER (WHERE e.status = 1) AS running FROM texera_db.workflow_executions e JOIN texera_db.\"user\" u ON u.uid = e.uid GROUP BY u.email ORDER BY total DESC LIMIT 30"}],
+      "fieldConfig": {"defaults": {"custom": {"align": "auto"}}}
+    },
+    {
+      "title": "Recent failed executions",
+      "type": "table",
+      "id": 43,
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "texera-pg"},
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 40},
+      "targets": [{"refId": "A", "format": "table", "rawQuery": true, "rawSql": "SELECT e.eid, u.email AS user_email, w.name AS workflow, e.name AS execution, e.starting_time AS started, e.last_update_time AS last_update, ROUND(EXTRACT(EPOCH FROM (e.last_update_time - e.starting_time))::numeric, 1) AS duration_s, e.cuid FROM texera_db.workflow_executions e JOIN texera_db.workflow_version wv ON wv.vid = e.vid JOIN texera_db.workflow w ON w.wid = wv.wid JOIN texera_db.\"user\" u ON u.uid = e.uid WHERE e.status = 4 ORDER BY e.starting_time DESC LIMIT 50"}],
+      "fieldConfig": {"defaults": {"custom": {"align": "auto"}}}
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["texera", "user-activity"],
+  "templating": {"list": []},
+  "time": {"from": "now-30d", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Texera — User Activity",
+  "uid": "texera-user-activity",
+  "version": 1,
+  "weekStart": ""
+}
