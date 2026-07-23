@@ -74,6 +74,12 @@ protects every service identically:
   - missing header → `401` + `WWW-Authenticate: Bearer realm="texera"`
   - bad/expired token → `401` + `error="invalid_token"`
 
+> **Verified against a live deployment, with a caveat.** `texera.dknet-ai.org` answers
+> `WWW-Authenticate: Bearer realm="realm"` from its webserver — the older challenge, without the
+> `error` parameter — while its file-service does emit `error="invalid_token"`. Deployments run
+> mixed service versions, so the MCP must not rely on that header alone to diagnose an expired
+> token; it also checks the token's own `exp`, which it can read locally.
+
 **Chosen auth model (v1): pre-issued JWT.** The user pastes a token into MCP config:
 
 ```jsonc
@@ -308,15 +314,25 @@ for the first cut.
 
 ## 5. Delivery plan
 
-| Phase | Content | Verification |
+| Phase | Content | Status |
 | --- | --- | --- |
-| 0 | `packages/texera-sdk` extracted from agent-service; agent-service imports it | `bun test` in agent-service stays green |
-| 1 | `mcp-service` scaffold: config, token introspection, error mapping, `texera_whoami`, stdio transport | unit tests w/ mocked fetch; real handshake against a deployment |
-| 2 | Dataset tools | unit tests both directions (valid + 401/403/404/oversize/bad path) |
-| 3 | Workflow read/CRUD + operator catalogue + resources | unit tests |
-| 4 | Edit session + validate + save | unit tests incl. concurrency-drift and invalid-property paths |
-| 5 | Computing units + `workflow_run` | unit tests + live run on a deployment |
-| 6 | Sharing tools, README, `npx` packaging | end-to-end conversation transcript |
+| 0 | `packages/texera-sdk` extracted from agent-service; agent-service imports it | done — agent-service's 132 tests stay green |
+| 1 | Config, token introspection, error mapping, `texera_whoami`, stdio transport | done |
+| 2 | Dataset tools | done |
+| 3 | Workflow CRUD + operator catalogue + resources + prompt | done |
+| 4 | Edit session + validate + save | done |
+| 5 | Computing units + `workflow_run` | done |
+| 6 | Sharing tools, README, `npx` bundle | done |
+| 7 | Remote streamable-HTTP transport + Helm chart + gateway route | not started |
+| 8 | Live Yjs co-editing (see §4) | not started |
 
-Per [AGENTS.md](../AGENTS.md): tests first, one issue + one PR per phase, Conventional
-Commits, `mcp-service` added to `.github/labeler.yml`.
+362 tests across the three packages, all green. The MCP layer is tested through a real MCP client
+over an in-memory transport against `src/testing/fake-texera.ts`, an HTTP-level stand-in — so tool
+schemas, dispatch, handlers and error translation are exercised, not stubbed.
+
+Verified against a live deployment (`texera.dknet-ai.org`): healthcheck, deployment-config
+discovery, the operator catalogue with its real ~150-operator payload, compact-schema rendering,
+and the authentication-failure path.
+
+Per [AGENTS.md](../AGENTS.md): Conventional Commits, and the Bun/TypeScript CI stack extended to
+cover `packages/texera-sdk` and `mcp-service`.
