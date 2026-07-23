@@ -1091,6 +1091,28 @@ jobs:
         # Test Analytics upload below can feed Codecov's failing-test PR
         # comments and flaky-test detection on main.
         run: bun test --coverage --coverage-reporter=lcov --reporter=junit --reporter-outfile=junit.xml
+      # texera-sdk and mcp-service share this job rather than getting their own:
+      # they are the same toolchain, and mcp-service depends on the SDK through a
+      # file: dependency, so testing them together is what actually validates the
+      # pairing.
+      - name: Install texera-sdk dependencies
+        working-directory: packages/texera-sdk
+        run: bun install --frozen-lockfile
+      - name: Check texera-sdk
+        working-directory: packages/texera-sdk
+        run: |
+          bun run format:check
+          bun run typecheck
+          bun test
+      - name: Install mcp-service dependencies
+        working-directory: mcp-service
+        run: bun install --frozen-lockfile
+      - name: Check mcp-service
+        working-directory: mcp-service
+        run: |
+          bun run format:check
+          bun run typecheck
+          bun test
       - name: Stage agent-service coverage for deferred Codecov upload
         # Deferred to codecov-upload.yml (workflow_run) so fork PRs get an
         # authenticated upload — see #6685. ubuntu leg only. working-directory is

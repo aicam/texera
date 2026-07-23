@@ -1,0 +1,33 @@
+{
+  "name": "@texera/mcp",
+  "version": "0.1.0",
+  "description": "Model Context Protocol server for Apache Texera — datasets, workflow editing and execution from any MCP-capable chatbot",
+  "type": "module",
+  "main": "src/index.ts",
+  "bin": {
+    "texera-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts",
+    "build": "bun build src/index.ts --target=node --outfile=dist/index.js --banner='#!/usr/bin/env node'",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\""
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@texera/sdk": "file:../packages/texera-sdk",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.14",
+    "prettier": "3.9.6",
+    "typescript": "6.0.3"
+  }
+}

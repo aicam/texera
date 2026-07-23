@@ -413,8 +413,19 @@ export class WorkflowState {
     this.settings = content.settings ? { ...content.settings } : { ...DEFAULT_WORKFLOW_SETTINGS };
   }
 
+  /**
+   * Projects the graph into the shape `/api/compile` and the execution endpoint
+   * accept: properties flattened onto each operator, and links addressed by
+   * port *ordinal* rather than port id.
+   *
+   * With `targetOperatorId`, only that operator and everything upstream of it
+   * is included — "execute to here" semantics, which lets a caller test one
+   * step without running the whole graph.
+   */
   toLogicalPlan(targetOperatorId?: string): LogicalPlan {
-    const enabledOperators = this.getAllEnabledOperators();
+    const enabledOperators = targetOperatorId
+      ? this.getSubDAG(targetOperatorId).operators.filter(op => !op.isDisabled)
+      : this.getAllEnabledOperators();
 
     const operators: LogicalOperator[] = enabledOperators.map(op => ({
       operatorID: op.operatorID,

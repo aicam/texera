@@ -174,3 +174,65 @@ describe("WorkflowState - getSubDAG", () => {
     expect(subDag.operators.map(o => o.operatorID)).toEqual(["op2"]);
   });
 });
+
+describe("toLogicalPlan", () => {
+  // A -> B -> C, plus an unrelated D.
+  function chain(): WorkflowState {
+    const state = new WorkflowState();
+    const make = (id: string, inputs: number, outputs: number): OperatorPredicate => ({
+      operatorID: id,
+      operatorType: "Op",
+      operatorVersion: "1.0",
+      operatorProperties: { label: id },
+      inputPorts: Array.from({ length: inputs }, (_, index) => ({ portID: `input-${index}` })),
+      outputPorts: Array.from({ length: outputs }, (_, index) => ({ portID: `output-${index}` })),
+      showAdvanced: false,
+    });
+    state.addOperator(make("a", 0, 1));
+    state.addOperator(make("b", 1, 1));
+    state.addOperator(make("c", 1, 1));
+    state.addOperator(make("d", 0, 1));
+    state.addLink({
+      linkID: "l1",
+      source: { operatorID: "a", portID: "output-0" },
+      target: { operatorID: "b", portID: "input-0" },
+    });
+    state.addLink({
+      linkID: "l2",
+      source: { operatorID: "b", portID: "output-0" },
+      target: { operatorID: "c", portID: "input-0" },
+    });
+    return state;
+  }
+
+  test("includes every enabled operator when no target is given", () => {
+    const plan = chain().toLogicalPlan();
+    expect(plan.operators.map(op => op.operatorID).sort()).toEqual(["a", "b", "c", "d"]);
+    expect(plan.links).toHaveLength(2);
+  });
+
+  test("narrows to the target and its upstream when a target is given", () => {
+    const plan = chain().toLogicalPlan("b");
+    expect(plan.operators.map(op => op.operatorID).sort()).toEqual(["a", "b"]);
+    // The b -> c link is dropped along with c.
+    expect(plan.links).toHaveLength(1);
+    expect(plan.links[0]).toMatchObject({ fromOpId: "a", toOpId: "b" });
+  });
+
+  test("a source operator as target yields just itself", () => {
+    const plan = chain().toLogicalPlan("a");
+    expect(plan.operators.map(op => op.operatorID)).toEqual(["a"]);
+    expect(plan.links).toHaveLength(0);
+  });
+
+  test("an unknown target yields an empty plan rather than the whole graph", () => {
+    const plan = chain().toLogicalPlan("missing");
+    expect(plan.operators).toHaveLength(0);
+  });
+
+  test("flattens properties and converts links to port ordinals", () => {
+    const plan = chain().toLogicalPlan();
+    expect(plan.operators.find(op => op.operatorID === "a")).toMatchObject({ operatorType: "Op", label: "a" });
+    expect(plan.links[0].fromPortId).toEqual({ id: 0, internal: false });
+  });
+});

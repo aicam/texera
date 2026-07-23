@@ -139,5 +139,8 @@ agent-service/.yarnrc.yml
 agent-service/yarn.lock
 agent-service/CLAUDE.md
 
+# mcp-service build output (bundled for npx distribution)
+mcp-service/dist/
+
 # Ignoring local Claude Code artifacts (settings, worktrees, scratch)
 .claude/
