@@ -17,8 +17,24 @@
  * under the License.
  */
 
-export * from "./backend-api";
-export * from "./execution-api";
-export * from "./workflow-api";
-export * from "./auth-api";
-export * from "./compile-api";
+export * from "./client";
+export * from "./logger";
+
+export * from "./types/workflow";
+export * from "./types/execution";
+export * from "./types/user";
+
+export * from "./api/auth";
+export * from "./api/config";
+export * from "./api/metadata";
+export * from "./api/workflow";
+export * from "./api/dataset";
+export * from "./api/compile";
+export * from "./api/execution";
+export * from "./api/computing-unit";
+export * from "./api/access";
+
+export * from "./graph/workflow-state";
+export * from "./graph/auto-layout";
+export * from "./graph/workflow-utils";
+export * from "./graph/workflow-system-metadata";

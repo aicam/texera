@@ -19,10 +19,10 @@
 
 import { describe, expect, test } from "bun:test";
 import { createAddOperatorTool, createModifyOperatorTool, createDeleteOperatorTool } from "./workflow-crud-tools";
-import { WorkflowState } from "../workflow-state";
-import { WorkflowSystemMetadata } from "../util/workflow-system-metadata";
-import type { OperatorMetadata } from "../../api/backend-api";
-import type { OperatorPredicate } from "../../types/workflow";
+import { WorkflowState } from "@texera/sdk";
+import { WorkflowSystemMetadata } from "@texera/sdk";
+import type { OperatorMetadata } from "@texera/sdk";
+import type { OperatorPredicate } from "@texera/sdk";
 
 // A single synthetic operator type with one input and one output port, backed
 // by a real (in-memory, no backend fetch) WorkflowSystemMetadata so the tools

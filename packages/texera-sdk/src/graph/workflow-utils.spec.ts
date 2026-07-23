@@ -19,7 +19,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { extractOperatorInputPortSchemaMap } from "./workflow-utils";
-import type { OperatorLink, OperatorPredicate, PortSchema } from "../../types/workflow";
+import type { OperatorLink, OperatorPredicate, PortSchema } from "../types/workflow";
 
 const TARGET = "target";
 

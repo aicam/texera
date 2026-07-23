@@ -22,11 +22,11 @@
 // of calling tools via the native protocol.
 
 import type { ModelMessage } from "ai";
-import type { WorkflowState } from "../workflow-state";
-import type { OperatorPredicate, OperatorPortSchemaMap, PortSchema } from "../../types/workflow";
+import type { WorkflowState } from "@texera/sdk";
+import type { OperatorPredicate, OperatorPortSchemaMap, PortSchema } from "@texera/sdk";
 import type { ReActStep } from "../../types/agent";
-import type { WorkflowCompilationResponse, WorkflowFatalError } from "../../api/compile-api";
-import { extractOperatorInputPortSchemaMap } from "./workflow-utils";
+import type { WorkflowCompilationResponse, WorkflowFatalError } from "@texera/sdk";
+import { extractOperatorInputPortSchemaMap } from "@texera/sdk";
 import { createLogger } from "../../logger";
 
 const log = createLogger("ContextAssembler");

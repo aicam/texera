@@ -17,8 +17,8 @@
  * under the License.
  */
 
-import type { OperatorInfo } from "../../types/execution";
-import type { WorkflowState } from "../workflow-state";
+import type { OperatorInfo } from "@texera/sdk";
+import type { WorkflowState } from "@texera/sdk";
 import { formatExecuteOperatorResult, getVisibleResultHeaders } from "./tools-utility";
 
 export function formatOperatorResult(operatorId: string, opInfo: OperatorInfo, workflowState: WorkflowState): string {

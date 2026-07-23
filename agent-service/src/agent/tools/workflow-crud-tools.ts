@@ -19,10 +19,10 @@
 
 import { z } from "zod";
 import { tool } from "ai";
-import { WorkflowState } from "../workflow-state";
-import { autoLayoutWorkflow } from "../util/auto-layout";
-import { WorkflowUtilService } from "../util/workflow-utils";
-import type { OperatorLink } from "../../types/workflow";
+import { WorkflowState } from "@texera/sdk";
+import { autoLayoutWorkflow } from "@texera/sdk";
+import { WorkflowUtilService } from "@texera/sdk";
+import type { OperatorLink } from "@texera/sdk";
 import {
   createToolResult,
   createErrorResult,
@@ -30,11 +30,7 @@ import {
   formatModifyOperatorResult,
   formatOperatorError,
 } from "./tools-utility";
-import {
-  type WorkflowSystemMetadata,
-  formatValidationErrors,
-  formatCompactSchemaForError,
-} from "../util/workflow-system-metadata";
+import { type WorkflowSystemMetadata, formatValidationErrors, formatCompactSchemaForError } from "@texera/sdk";
 
 export interface ToolContext {
   metadataStore?: WorkflowSystemMetadata;

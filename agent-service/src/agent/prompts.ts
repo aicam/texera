@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import { WorkflowSystemMetadata } from "./util/workflow-system-metadata";
+import { WorkflowSystemMetadata } from "@texera/sdk";
 
 const PYTHON_UDF_OPERATOR_TYPES = ["PythonUDFV2"];
 const R_UDF_OPERATOR_TYPES = ["RUDF"];

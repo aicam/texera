@@ -19,7 +19,7 @@
 
 import { beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { buildApp, start, _resetAgentStoreForTests, _getAgentForTests } from "./server";
-import { WorkflowSystemMetadata } from "./agent/util/workflow-system-metadata";
+import { WorkflowSystemMetadata } from "@texera/sdk";
 import { env } from "./config/env";
 
 const API = env.API_PREFIX;

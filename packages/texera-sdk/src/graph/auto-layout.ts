@@ -18,7 +18,7 @@
  */
 
 import dagre from "dagre";
-import type { WorkflowState } from "../workflow-state";
+import type { WorkflowState } from "./workflow-state";
 
 // Values mirror frontend joint-graph-wrapper.ts so agent-generated and
 // user-generated layouts visually match.

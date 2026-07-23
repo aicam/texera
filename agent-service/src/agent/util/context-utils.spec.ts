@@ -20,9 +20,9 @@
 import { describe, expect, test } from "bun:test";
 import type { ModelMessage } from "ai";
 import { assembleContext } from "./context-utils";
-import { WorkflowState } from "../workflow-state";
+import { WorkflowState } from "@texera/sdk";
 import type { ReActStep } from "../../types/agent";
-import type { OperatorPredicate } from "../../types/workflow";
+import type { OperatorPredicate } from "@texera/sdk";
 
 function step(messageId: string, role: "user" | "agent", stepId: number, content: string, isEnd: boolean): ReActStep {
   return {

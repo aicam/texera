@@ -31,8 +31,6 @@ import type {
   ValidationError,
 } from "../types/workflow";
 
-export type { ValidationError, Validation } from "../types/workflow";
-
 interface ValidationOutput {
   errors: Record<string, ValidationError>;
   workflowEmpty: boolean;

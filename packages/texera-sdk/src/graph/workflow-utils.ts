@@ -24,9 +24,9 @@ import type {
   OperatorLink,
   PortSchema,
   OperatorPortSchemaMap,
-} from "../../types/workflow";
+} from "../types/workflow";
 import type { WorkflowSystemMetadata } from "./workflow-system-metadata";
-import type { WorkflowState } from "../workflow-state";
+import type { WorkflowState } from "./workflow-state";
 
 // Format "{id}_{internal}" must align with the backend port-identity serializer.
 function serializePortIdentity(id: number, internal: boolean = false): string {

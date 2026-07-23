@@ -17,25 +17,7 @@
  * under the License.
  */
 
-import { env } from "../config/env";
-
-interface BackendConfig {
-  apiEndpoint: string;
-  modelsEndpoint: string;
-  compileEndpoint: string;
-  executionEndpoint: string;
-}
-
-const currentConfig: BackendConfig = {
-  apiEndpoint: env.TEXERA_DASHBOARD_SERVICE_ENDPOINT,
-  modelsEndpoint: env.LLM_ENDPOINT,
-  compileEndpoint: env.WORKFLOW_COMPILING_SERVICE_ENDPOINT,
-  executionEndpoint: env.WORKFLOW_EXECUTION_SERVICE_ENDPOINT,
-};
-
-export function getBackendConfig(): BackendConfig {
-  return { ...currentConfig };
-}
+import type { TexeraClient } from "../client";
 
 export interface InputPortInfo {
   displayName?: string;
@@ -47,7 +29,7 @@ export interface OutputPortInfo {
   displayName?: string;
 }
 
-interface OperatorAdditionalMetadata {
+export interface OperatorAdditionalMetadata {
   userFriendlyName: string;
   operatorGroupName: string;
   operatorDescription?: string;
@@ -66,7 +48,7 @@ export interface OperatorSchema {
   operatorVersion: string;
 }
 
-interface GroupInfo {
+export interface GroupInfo {
   groupName: string;
   children?: GroupInfo[] | null;
 }
@@ -76,13 +58,14 @@ export interface OperatorMetadata {
   groups: GroupInfo[];
 }
 
-export async function fetchOperatorMetadata(): Promise<OperatorMetadata> {
-  const url = `${currentConfig.apiEndpoint}/api/resources/operator-metadata`;
-  const response = await fetch(url);
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch operator metadata: ${response.status} ${response.statusText}`);
-  }
-
-  return (await response.json()) as OperatorMetadata;
+/**
+ * The operator catalogue: every operator type with the JSON Schema for its
+ * properties and its port layout.
+ *
+ * `SystemMetadataResource` carries no `@RolesAllowed`, so this is readable
+ * without a token — which lets a client validate operator properties before it
+ * has authenticated.
+ */
+export async function fetchOperatorMetadata(client: TexeraClient): Promise<OperatorMetadata> {
+  return client.request<OperatorMetadata>("dashboard", "/api/resources/operator-metadata", { anonymous: true });
 }

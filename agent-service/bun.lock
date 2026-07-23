@@ -7,6 +7,7 @@
       "dependencies": {
         "@ai-sdk/openai": "4.0.17",
         "@elysiajs/cors": "1.4.2",
+        "@texera/sdk": "file:../packages/texera-sdk",
         "ai": "7.0.33",
         "ajv": "8.18.0",
         "dagre": "0.8.5",
@@ -95,6 +96,8 @@
     "@sinclair/typebox": ["@sinclair/typebox@0.34.41", "", {}, "sha512-6gS8pZzSXdyRHTIqoqSVknxolr1kzfy4/CeDnrzsVz8TTIWUbOBr6gnzOmTYJ3eXQNh4IYHIGi5aIL7sOZ2G/g=="],
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
+
+    "@texera/sdk": ["@texera/sdk@file:../packages/texera-sdk", { "dependencies": { "ajv": "8.18.0", "dagre": "0.8.5", "rxjs": "7.8.2" }, "devDependencies": { "@types/bun": "1.3.14", "@types/dagre": "0.7.54", "prettier": "3.9.6", "typescript": "6.0.3" } }],
 
     "@tokenizer/inflate": ["@tokenizer/inflate@0.4.1", "", { "dependencies": { "debug": "^4.4.3", "token-types": "^6.1.1" } }, "sha512-2mAv+8pkG6GIZiF1kNg1jAjh27IDxEPKwdGul3snfztFerfPGI1LjDezZp3i7BElXompqEtPmoPx6c2wgtWsOA=="],
 

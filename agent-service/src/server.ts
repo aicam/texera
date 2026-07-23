@@ -22,10 +22,10 @@ import { cors } from "@elysiajs/cors";
 import { createOpenAI } from "@ai-sdk/openai";
 import { TexeraAgent } from "./agent/texera-agent";
 import { getVisibleResultHeaders } from "./agent/tools/tools-utility";
-import { getBackendConfig } from "./api/backend-api";
-import { extractBearerToken, extractUserFromToken, validateToken } from "./api/auth-api";
-import { retrieveWorkflow } from "./api/workflow-api";
-import { WorkflowSystemMetadata } from "./agent/util/workflow-system-metadata";
+import { texeraClient, userClient } from "./api/client";
+import { extractBearerToken, extractUserFromToken, validateToken } from "@texera/sdk";
+import { retrieveWorkflow } from "@texera/sdk";
+import { WorkflowSystemMetadata } from "@texera/sdk";
 import { env } from "./config/env";
 import { createLogger } from "./logger";
 
@@ -42,7 +42,7 @@ import type {
 import { AgentState, OperatorResultSerializationMode } from "./types/agent";
 import type { WsClientCommand, WsServerEvent } from "./types/ws";
 import { WsServerSnapshotEvent, WsServerStepEvent, WsServerStatusEvent, WsServerErrorEvent } from "./types/ws";
-import type { OperatorResultSummary } from "./types/execution";
+import type { OperatorResultSummary } from "@texera/sdk";
 
 const agentStore = new Map<string, TexeraAgent>();
 let agentCounter = 0;
@@ -53,10 +53,9 @@ async function createAgentInstance(
   customName?: string
 ): Promise<{ agentId: string; agent: TexeraAgent }> {
   const agentId = `agent-${++agentCounter}`;
-  const config = getBackendConfig();
 
   const openai = createOpenAI({
-    baseURL: `${config.modelsEndpoint}/api`,
+    baseURL: `${env.LLM_ENDPOINT}/api`,
     // The LLM gateway (access-control-service) enforces a REGULAR/ADMIN-role
     // JWT (apache/texera#5421) and injects the LiteLLM master key downstream,
     // so the delegating user's JWT is the only credential this service sends.
@@ -76,7 +75,7 @@ async function createAgentInstance(
 
   if (delegateConfig.workflowId) {
     try {
-      const workflow = await retrieveWorkflow(delegateConfig.userToken, delegateConfig.workflowId);
+      const workflow = await retrieveWorkflow(userClient(delegateConfig.userToken), delegateConfig.workflowId);
       delegateConfig.workflowName = workflow.name;
 
       const workflowState = agent.getWorkflowState();
@@ -595,9 +594,9 @@ function printStartupMessage(app: ReturnType<typeof buildApp>) {
 
   console.log("");
   console.log("Environment:");
-  console.log(`  LLM_ENDPOINT: ${getBackendConfig().modelsEndpoint}`);
-  console.log(`  WORKFLOW_COMPILING_SERVICE_ENDPOINT: ${getBackendConfig().compileEndpoint}`);
-  console.log(`  TEXERA_DASHBOARD_SERVICE_ENDPOINT: ${getBackendConfig().apiEndpoint}`);
+  console.log(`  LLM_ENDPOINT: ${env.LLM_ENDPOINT}`);
+  console.log(`  WORKFLOW_COMPILING_SERVICE_ENDPOINT: ${texeraClient.endpoints.compile}`);
+  console.log(`  TEXERA_DASHBOARD_SERVICE_ENDPOINT: ${texeraClient.endpoints.dashboard}`);
   console.log("");
   console.log("Features:");
   console.log("  - Auto-persistence with debounce (500ms)");
@@ -607,7 +606,7 @@ function printStartupMessage(app: ReturnType<typeof buildApp>) {
 async function initializeServices() {
   try {
     log.info("initializing global workflow system metadata");
-    const metadata = await WorkflowSystemMetadata.initializeGlobal();
+    const metadata = await WorkflowSystemMetadata.initializeGlobal(texeraClient);
     log.info({ operatorCount: metadata.getOperatorCount() }, "loaded operators into global metadata");
   } catch (error) {
     log.warn({ err: error }, "failed to initialize global metadata; agents will initialize individually");

@@ -17,22 +17,11 @@
  * under the License.
  */
 
-export interface LogicalLink {
-  fromOpId: string;
-  fromPortId: { id: number; internal: boolean };
-  toOpId: string;
-  toPortId: { id: number; internal: boolean };
-}
-
-interface LogicalOperator {
-  operatorID: string;
-  operatorType: string;
-  [key: string]: any;
-}
-
-export interface LogicalPlan {
-  operators: LogicalOperator[];
-  links: LogicalLink[];
-  opsToViewResult?: string[];
-  opsToReuseResult?: string[];
+/** The identity carried by a Texera JWT. */
+export interface UserInfo {
+  uid: number;
+  name: string;
+  email: string;
+  /** `ADMIN` | `REGULAR` | `RESTRICTED` | `INACTIVE` — see `UserRoleEnum`. */
+  role: string;
 }

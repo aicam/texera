@@ -18,9 +18,9 @@
  */
 
 export * from "./types";
-export { WorkflowState } from "./agent/workflow-state";
+export { WorkflowState } from "@texera/sdk";
 export { WorkflowResultState } from "./agent/workflow-result-state";
-export { WorkflowSystemMetadata } from "./agent/util/workflow-system-metadata";
+export { WorkflowSystemMetadata } from "@texera/sdk";
 export * from "./agent/tools";
 export { TexeraAgent, type TexeraAgentConfig, type AgentMessageResult } from "./agent/texera-agent";
 export { buildSystemPrompt } from "./agent/prompts";

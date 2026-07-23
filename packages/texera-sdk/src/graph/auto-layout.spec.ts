@@ -19,8 +19,8 @@
 
 import { describe, expect, test } from "bun:test";
 import { autoLayoutWorkflow } from "./auto-layout";
-import { WorkflowState } from "../workflow-state";
-import type { OperatorPredicate, OperatorLink } from "../../types/workflow";
+import { WorkflowState } from "./workflow-state";
+import type { OperatorPredicate, OperatorLink } from "../types/workflow";
 
 function makeOperator(id: string): OperatorPredicate {
   return {

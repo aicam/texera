@@ -19,9 +19,9 @@
 
 import { describe, expect, test } from "bun:test";
 import { formatOperatorResult } from "./result-formatting";
-import { WorkflowState } from "../workflow-state";
-import type { OperatorInfo } from "../../types/execution";
-import type { OperatorPredicate, OperatorLink, PortDescription } from "../../types/workflow";
+import { WorkflowState } from "@texera/sdk";
+import type { OperatorInfo } from "@texera/sdk";
+import type { OperatorPredicate, OperatorLink, PortDescription } from "@texera/sdk";
 
 function makeOpInfo(overrides: Partial<OperatorInfo> = {}): OperatorInfo {
   return {

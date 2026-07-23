@@ -18,13 +18,12 @@
  */
 
 import Ajv from "ajv";
-import { fetchOperatorMetadata, type OperatorSchema, type OperatorMetadata } from "../../api/backend-api";
-import type { ValidationError, Validation } from "../../types/workflow";
-import { createLogger } from "../../logger";
+import type { TexeraClient } from "../client";
+import { fetchOperatorMetadata, type OperatorSchema, type OperatorMetadata } from "../api/metadata";
+import type { ValidationError, Validation } from "../types/workflow";
+import { createSdkLogger } from "../logger";
 
-const log = createLogger("WorkflowSystemMetadata");
-
-export type { ValidationError, Validation } from "../../types/workflow";
+const log = createSdkLogger("WorkflowSystemMetadata");
 
 interface OperatorSchemaInfo {
   properties: any;
@@ -136,12 +135,17 @@ export class WorkflowSystemMetadata {
     return WorkflowSystemMetadata.instance;
   }
 
-  static async initializeGlobal(): Promise<WorkflowSystemMetadata> {
+  static async initializeGlobal(client: TexeraClient): Promise<WorkflowSystemMetadata> {
     const instance = WorkflowSystemMetadata.getInstance();
     if (!instance.isInitialized()) {
-      await instance.initializeFromBackend();
+      await instance.initializeFromBackend(client);
     }
     return instance;
+  }
+
+  /** Drops the process-wide instance. Exists for tests. */
+  static resetGlobal(): void {
+    WorkflowSystemMetadata.instance = null;
   }
 
   private schemas: Map<string, any> = new Map();
@@ -149,9 +153,9 @@ export class WorkflowSystemMetadata {
   private additionalMetadata: Map<string, any> = new Map();
   private initialized = false;
 
-  async initializeFromBackend(): Promise<void> {
+  async initializeFromBackend(client: TexeraClient): Promise<void> {
     try {
-      const metadata = await fetchOperatorMetadata();
+      const metadata = await fetchOperatorMetadata(client);
       this.loadFromMetadata(metadata);
       this.initialized = true;
       log.info({ operatorCount: this.schemas.size }, "loaded operators from backend");

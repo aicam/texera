@@ -20,12 +20,13 @@
 import { z } from "zod";
 import { tool } from "ai";
 import { createErrorResult, formatExecuteOperatorResult, getVisibleResultHeaders } from "./tools-utility";
-import type { WorkflowState } from "../workflow-state";
-import { getBackendConfig } from "../../api/backend-api";
+import type { WorkflowState } from "@texera/sdk";
+import { TexeraApiError, TexeraConnectionError, runWorkflowSync } from "@texera/sdk";
+import { userClient } from "../../api/client";
 import { env } from "../../config/env";
-import type { LogicalPlan, LogicalLink } from "../../api/execution-api";
-import type { OperatorInfo, SyncExecutionResult } from "../../types/execution";
-import { WorkflowSystemMetadata } from "../util/workflow-system-metadata";
+import type { LogicalPlan, LogicalLink } from "@texera/sdk";
+import type { OperatorInfo, SyncExecutionResult } from "@texera/sdk";
+import { WorkflowSystemMetadata } from "@texera/sdk";
 import { DEFAULT_AGENT_SETTINGS } from "../../types/agent";
 import { createLogger } from "../../logger";
 
@@ -256,63 +257,35 @@ async function executeWorkflowHttp(
   logicalPlan: LogicalPlan,
   options: { abortSignal?: AbortSignal } = {}
 ): Promise<SyncExecutionResult> {
-  const backendConfig = getBackendConfig();
-
-  const workflowId = config.workflowId;
   const computingUnitId = config.computingUnitId ?? 0;
-
-  // In k8s each computing unit is a separate pod, so the endpoint varies per cuid.
-  const executionEndpoint = env.EXECUTION_ENDPOINT_TEMPLATE
-    ? env.EXECUTION_ENDPOINT_TEMPLATE.replace("{cuid}", String(computingUnitId))
-    : backendConfig.executionEndpoint;
-
-  const url = `${executionEndpoint}/api/execution/${workflowId}/${computingUnitId}/run`;
-
-  const timeoutSeconds = config.executionTimeoutMs
-    ? Math.ceil(config.executionTimeoutMs / 1000)
-    : Math.ceil(DEFAULT_AGENT_SETTINGS.executionTimeoutMs / 1000);
-
-  const request = {
-    executionName: "agent-execution",
-    logicalPlan: {
-      operators: logicalPlan.operators,
-      links: logicalPlan.links,
-      opsToViewResult: logicalPlan.opsToViewResult || [],
-      opsToReuseResult: [],
-    },
-    targetOperatorIds: logicalPlan.opsToViewResult || [],
-    timeoutSeconds,
-    maxOperatorResultCharLimit: config.maxOperatorResultCharLimit ?? DEFAULT_AGENT_SETTINGS.maxOperatorResultCharLimit,
-    maxOperatorResultCellCharLimit:
-      config.maxOperatorResultCellCharLimit ?? DEFAULT_AGENT_SETTINGS.maxOperatorResultCellCharLimit,
-  };
+  const timeoutSeconds = Math.ceil((config.executionTimeoutMs ?? DEFAULT_AGENT_SETTINGS.executionTimeoutMs) / 1000);
+  const maxOperatorResultCharLimit =
+    config.maxOperatorResultCharLimit ?? DEFAULT_AGENT_SETTINGS.maxOperatorResultCharLimit;
+  const maxOperatorResultCellCharLimit =
+    config.maxOperatorResultCellCharLimit ?? DEFAULT_AGENT_SETTINGS.maxOperatorResultCellCharLimit;
 
   log.debug(
-    {
-      url,
-      maxOperatorResultCharLimit: request.maxOperatorResultCharLimit,
-      maxOperatorResultCellCharLimit: request.maxOperatorResultCellCharLimit,
-    },
+    { workflowId: config.workflowId, computingUnitId, maxOperatorResultCharLimit, maxOperatorResultCellCharLimit },
     "executing workflow"
   );
 
   try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.userToken}`,
+    return await runWorkflowSync(userClient(config.userToken), {
+      workflowId: config.workflowId,
+      computingUnitId,
+      plan: {
+        operators: logicalPlan.operators,
+        links: logicalPlan.links,
+        opsToViewResult: logicalPlan.opsToViewResult || [],
+        opsToReuseResult: [],
       },
-      body: JSON.stringify(request),
+      executionName: "agent-execution",
+      targetOperatorIds: logicalPlan.opsToViewResult || [],
+      timeoutSeconds,
+      maxOperatorResultCharLimit,
+      maxOperatorResultCellCharLimit,
       signal: options.abortSignal,
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Execution request failed: ${response.status} ${response.statusText} - ${errorText}`);
-    }
-
-    return (await response.json()) as SyncExecutionResult;
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw error;
@@ -322,9 +295,24 @@ async function executeWorkflowHttp(
       success: false,
       state: "Error",
       operators: {},
-      errors: [error instanceof Error ? error.message : "Unknown error"],
+      errors: [describeExecutionFailure(error)],
     };
   }
+}
+
+/**
+ * Restates a transport/HTTP failure in the wording the agent's result
+ * formatter (and its tests) expect, rather than leaking the SDK's
+ * URL-prefixed message into the model's context.
+ */
+function describeExecutionFailure(error: unknown): string {
+  if (error instanceof TexeraApiError) {
+    return `Execution request failed: ${error.status} ${error.statusText}${error.body ? ` - ${error.body}` : ""}`;
+  }
+  if (error instanceof TexeraConnectionError) {
+    return error.cause instanceof Error ? error.cause.message : String(error.cause);
+  }
+  return error instanceof Error ? error.message : "Unknown error";
 }
 
 function formatInputOutput(

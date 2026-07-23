@@ -20,11 +20,12 @@
 import { generateText, type ModelMessage, type LanguageModel, stepCountIs } from "ai";
 import { Subscription } from "rxjs";
 import { debounceTime } from "rxjs/operators";
-import { WorkflowState } from "./workflow-state";
-import { WorkflowSystemMetadata } from "./util/workflow-system-metadata";
+import { WorkflowState } from "@texera/sdk";
+import { WorkflowSystemMetadata } from "@texera/sdk";
 import { WorkflowResultState } from "./workflow-result-state";
 import { formatOperatorResult } from "./tools/result-formatting";
-import type { AgentSettings, ReActStep, TokenUsage, UserInfo } from "../types/agent";
+import type { AgentSettings, ReActStep, TokenUsage } from "../types/agent";
+import type { UserInfo } from "@texera/sdk";
 import {
   AgentState as AgentStateEnum,
   DEFAULT_AGENT_SETTINGS,
@@ -48,7 +49,8 @@ import {
   type ExecutionConfig,
 } from "./tools/workflow-execution-tools";
 import { assembleContext } from "./util/context-utils";
-import { compileWorkflowAsync, type WorkflowCompilationResponse } from "../api/compile-api";
+import { compileWorkflow, type WorkflowCompilationResponse } from "@texera/sdk";
+import { texeraClient, userClient } from "../api/client";
 import { createLogger } from "../logger";
 import type { Logger } from "pino";
 
@@ -162,7 +164,7 @@ export class TexeraAgent {
   async initialize(): Promise<void> {
     try {
       if (!this.metadataStore.isInitialized()) {
-        await this.metadataStore.initializeFromBackend();
+        await this.metadataStore.initializeFromBackend(texeraClient);
       }
 
       this.rebuildSystemPrompt();
@@ -410,8 +412,11 @@ export class TexeraAgent {
     }
 
     try {
-      const { retrieveWorkflow } = await import("../api/workflow-api");
-      const workflow = await retrieveWorkflow(this.delegateConfig.userToken, this.delegateConfig.workflowId);
+      const { retrieveWorkflow } = await import("@texera/sdk");
+      const workflow = await retrieveWorkflow(
+        userClient(this.delegateConfig.userToken),
+        this.delegateConfig.workflowId
+      );
       this.workflowState.setWorkflowContent(workflow.content);
       this.log.debug({ workflowId: this.delegateConfig.workflowId }, "refreshed workflow from backend");
     } catch (error) {
@@ -454,14 +459,13 @@ export class TexeraAgent {
         }
 
         try {
-          const { persistWorkflow } = await import("../api/workflow-api");
+          const { persistWorkflow } = await import("@texera/sdk");
           const workflowContent = this.workflowState.getWorkflowContent();
-          await persistWorkflow(
-            this.delegateConfig.userToken,
-            this.delegateConfig.workflowId,
-            this.delegateConfig.workflowName || "Agent Workflow",
-            workflowContent
-          );
+          await persistWorkflow(userClient(this.delegateConfig.userToken), {
+            wid: this.delegateConfig.workflowId,
+            name: this.delegateConfig.workflowName || "Agent Workflow",
+            content: workflowContent,
+          });
           this.log.debug({ workflowId: this.delegateConfig.workflowId }, "auto-persisted workflow");
         } catch (error) {
           this.log.error({ err: error }, "failed to auto-persist workflow");
@@ -532,7 +536,7 @@ export class TexeraAgent {
           if (this.workflowState.getAllOperators().length > 0) {
             try {
               const logicalPlan = this.workflowState.toLogicalPlan();
-              compilationResult = await compileWorkflowAsync(logicalPlan);
+              compilationResult = await compileWorkflow(texeraClient, logicalPlan);
             } catch (e: any) {
               this.log.warn({ err: e?.message || e }, "compilation failed; proceeding without schemas");
             }

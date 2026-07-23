@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import type { OperatorInfo } from "../types/execution";
+import type { OperatorInfo } from "@texera/sdk";
 
 interface ResultEntry {
   operatorInfo: OperatorInfo;

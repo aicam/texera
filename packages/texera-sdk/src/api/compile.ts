@@ -17,18 +17,11 @@
  * under the License.
  */
 
-import { getBackendConfig } from "./backend-api";
+import type { TexeraClient } from "../client";
 import type { LogicalPlan, OperatorPortSchemaMap } from "../types/workflow";
-import { createLogger } from "../logger";
+import { createSdkLogger } from "../logger";
 
-const log = createLogger("CompileAPI");
-
-export interface SchemaAttribute {
-  attributeName: string;
-  attributeType: "string" | "integer" | "double" | "boolean" | "long" | "timestamp" | "binary";
-}
-
-export type PortSchema = ReadonlyArray<SchemaAttribute>;
+const log = createSdkLogger("CompileAPI");
 
 export interface WorkflowFatalError {
   type: string;
@@ -42,33 +35,34 @@ export interface WorkflowCompilationResponse {
   operatorErrors: Record<string, WorkflowFatalError>;
 }
 
-export async function compileWorkflowAsync(logicalPlan: LogicalPlan): Promise<WorkflowCompilationResponse | null> {
-  const config = getBackendConfig();
-  const url = `${config.compileEndpoint}/api/compile`;
-
-  const body = {
-    operators: logicalPlan.operators,
-    links: logicalPlan.links,
-    opsToReuseResult: [],
-    opsToViewResult: [],
-  };
-
+/**
+ * Type-checks a logical plan without running it (`POST /api/compile`), yielding
+ * per-port output schemas and per-operator errors.
+ *
+ * Returns `null` rather than throwing when the compiling service is unreachable
+ * or errors: compilation is an *enrichment* step for callers (better attribute
+ * suggestions, earlier error messages), and losing it must not fail the
+ * surrounding edit.
+ */
+export async function compileWorkflow(
+  client: TexeraClient,
+  logicalPlan: LogicalPlan
+): Promise<WorkflowCompilationResponse | null> {
   try {
-    const response = await fetch(url, {
+    return await client.request<WorkflowCompilationResponse>("compile", "/api/compile", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      json: {
+        operators: logicalPlan.operators,
+        links: logicalPlan.links,
+        opsToReuseResult: [],
+        opsToViewResult: [],
+      },
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      log.warn({ status: response.status, statusText: response.statusText, body: errorText }, "compilation failed");
-      return null;
-    }
-
-    return (await response.json()) as WorkflowCompilationResponse;
   } catch (error) {
     log.warn({ err: error }, "compile workflow API error");
     return null;
   }
 }
+
+/** @deprecated Use {@link compileWorkflow}. */
+export const compileWorkflowAsync = compileWorkflow;

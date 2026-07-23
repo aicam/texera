@@ -19,10 +19,10 @@
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { executeOperatorAndFormat, type ExecutionConfig } from "./workflow-execution-tools";
-import { WorkflowState } from "../workflow-state";
-import { WorkflowSystemMetadata } from "../util/workflow-system-metadata";
-import type { OperatorPredicate, PortDescription } from "../../types/workflow";
-import type { OperatorInfo, SyncExecutionResult } from "../../types/execution";
+import { WorkflowState } from "@texera/sdk";
+import { WorkflowSystemMetadata } from "@texera/sdk";
+import type { OperatorPredicate, PortDescription } from "@texera/sdk";
+import type { OperatorInfo, SyncExecutionResult } from "@texera/sdk";
 
 function makeOperator(id: string, inputPorts: PortDescription[] = []): OperatorPredicate {
   return {
@@ -46,9 +46,13 @@ function cfg(overrides: Partial<ExecutionConfig> = {}): ExecutionConfig {
   return { userToken: "tok", workflowId: 1, ...overrides };
 }
 
-// A fetch double resolving to an ok response whose body is the given result.
+// A fetch double resolving to a real ok Response carrying the given result.
+// A real Response (rather than a hand-rolled object) matters because the SDK
+// client reads status, headers and text() off it.
 function resolveFetch(spy: ReturnType<typeof spyOn>, result: SyncExecutionResult): void {
-  spy.mockResolvedValue({ ok: true, json: async () => result } as unknown as Response);
+  spy.mockImplementation(
+    (async () => new Response(JSON.stringify(result), { status: 200 })) as unknown as typeof fetch
+  );
 }
 
 let fetchSpy: ReturnType<typeof spyOn>;
@@ -56,7 +60,9 @@ let validateSpy: ReturnType<typeof spyOn>;
 
 beforeEach(() => {
   // Default: any unexpected network call fails loudly instead of hitting localhost.
-  fetchSpy = spyOn(globalThis, "fetch").mockRejectedValue(new Error("unexpected fetch"));
+  fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async () => {
+    throw new Error("unexpected fetch");
+  }) as unknown as typeof fetch);
   // Isolate connection validation from schema validation (TestOp is an unknown type).
   validateSpy = spyOn(WorkflowSystemMetadata.getInstance(), "validateOperatorProperties").mockReturnValue({
     isValid: true,
@@ -143,7 +149,9 @@ describe("executeOperatorAndFormat — execution-level failures", () => {
 
   test("surfaces a network error as a general error", async () => {
     const state = stateWith(makeOperator("op1"));
-    fetchSpy.mockRejectedValue(new Error("network down"));
+    fetchSpy.mockImplementation((async () => {
+      throw new Error("network down");
+    }) as unknown as typeof fetch);
 
     const result = await executeOperatorAndFormat(state, cfg(), "op1");
 
@@ -153,12 +161,10 @@ describe("executeOperatorAndFormat — execution-level failures", () => {
 
   test("surfaces a non-ok HTTP response as a general error", async () => {
     const state = stateWith(makeOperator("op1"));
-    fetchSpy.mockResolvedValue({
-      ok: false,
-      status: 500,
-      statusText: "Internal Server Error",
-      text: async () => "upstream boom",
-    } as unknown as Response);
+    fetchSpy.mockImplementation(
+      (async () =>
+        new Response("upstream boom", { status: 500, statusText: "Internal Server Error" })) as unknown as typeof fetch
+    );
 
     const result = await executeOperatorAndFormat(state, cfg(), "op1");
 
@@ -282,7 +288,9 @@ describe("executeOperatorAndFormat — cancellation", () => {
     const state = stateWith(makeOperator("op1"));
     const abortErr = new Error("aborted");
     abortErr.name = "AbortError";
-    fetchSpy.mockRejectedValue(abortErr);
+    fetchSpy.mockImplementation((async () => {
+      throw abortErr;
+    }) as unknown as typeof fetch);
 
     await expect(
       executeOperatorAndFormat(state, cfg(), "op1", { abortSignal: new AbortController().signal })

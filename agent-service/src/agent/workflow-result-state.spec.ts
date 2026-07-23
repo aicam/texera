@@ -19,7 +19,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { WorkflowResultState } from "./workflow-result-state";
-import type { OperatorInfo } from "../types/execution";
+import type { OperatorInfo } from "@texera/sdk";
 
 function makeInfo(outputTuples: number): OperatorInfo {
   return {

@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import type { WorkflowContent } from "./workflow";
+import type { UserInfo, WorkflowContent } from "@texera/sdk";
 
 export enum AgentState {
   UNAVAILABLE = "UNAVAILABLE",
@@ -107,13 +107,6 @@ export const DEFAULT_AGENT_SETTINGS: Omit<AgentSettings, "systemPrompt"> = {
     "PythonUDFV2",
   ],
 };
-
-export interface UserInfo {
-  uid: number;
-  name: string;
-  email: string;
-  role: string;
-}
 
 export interface AgentDelegateConfig {
   userToken: string;

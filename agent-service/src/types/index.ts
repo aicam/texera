@@ -17,7 +17,7 @@
  * under the License.
  */
 
-export * from "./workflow";
-export * from "./execution";
+export * from "@texera/sdk";
+
 export * from "./agent";
 export * from "./ws";
