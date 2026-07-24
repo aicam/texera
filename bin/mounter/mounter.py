@@ -40,6 +40,7 @@ import threading
 import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
 
 MOUNT_ROOT = os.environ.get("MOUNT_ROOT", "/var/lib/texera-mounts")
 MOUNTER_PORT = int(os.environ.get("MOUNTER_PORT", "8100"))
@@ -181,6 +182,46 @@ def do_mount(cuid, repo, commit, jwt, file_service_base):
     return target
 
 
+def list_mounts(cuid):
+    """List the datasets currently mounted for a CU as {repositoryName, commitHash, mountPath}.
+
+    Derived entirely from /proc/mounts (via mount_targets_under) so the mounter stays
+    stateless: a mount at MOUNT_ROOT/<cuid>/<repo>/<commit> encodes its own identity.
+    """
+    if not cuid:
+        raise ValueError("cuid is required")
+    cu_dir = os.path.normpath(os.path.join(MOUNT_ROOT, cuid))
+    mounts = []
+    for target in mount_targets_under(cu_dir):
+        if os.path.normpath(target) == cu_dir:
+            continue  # the shared-root bind itself, never a dataset mount
+        parts = os.path.relpath(target, cu_dir).split(os.sep)
+        if len(parts) != 2:
+            continue  # not a <repo>/<commit> mount point
+        repo, commit = parts
+        mounts.append({"repositoryName": repo, "commitHash": commit, "mountPath": target})
+    return mounts
+
+
+def do_unmount(cuid, repo, commit):
+    """Idempotently unmount a single dataset mounted for a CU (a user-initiated unmount,
+    as opposed to the watcher tearing down a whole departed CU)."""
+    if not cuid or not repo or not commit:
+        raise ValueError("cuid, repositoryName and commitHash are required")
+
+    target = os.path.normpath(os.path.join(MOUNT_ROOT, cuid, repo, commit))
+    if is_mounted(target):
+        # The mounter is root, so a plain lazy umount works (no setuid fusermount needed).
+        result = subprocess.run(["umount", "-l", target], capture_output=True, text=True)
+        if result.returncode != 0 and is_mounted(target):
+            raise RuntimeError(
+                f"umount {target} failed: {(result.stdout + result.stderr).strip()}"
+            )
+    # Drop the now-empty directory (and any parents left empty up to the CU's own dir).
+    _remove_empty_dirs(target, cuid)
+    log(f"unmounted {repo}:{commit} for cu {cuid} at {target}")
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, obj):
         body = json.dumps(obj).encode()
@@ -191,10 +232,41 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        if self.path == "/healthz":
+        parsed = urlparse(self.path)
+        if parsed.path == "/healthz":
             self._send(200, {"status": "ok"})
+        elif parsed.path == "/mounts":
+            try:
+                cuid = parse_qs(parsed.query).get("cuid", [""])[0]
+                self._send(200, {"mounts": list_mounts(cuid)})
+            except ValueError as e:
+                self._send(400, {"error": str(e)})
+            except Exception as e:  # noqa: BLE001
+                log(f"listing mounts failed: {e}")
+                self._send(500, {"error": str(e)})
         else:
             self._send(404, {"error": "not found"})
+
+    def do_DELETE(self):
+        # Params come in the query string (not a body): HttpURLConnection, which the
+        # computing-unit service uses to call this, cannot send a body with DELETE.
+        parsed = urlparse(self.path)
+        if parsed.path != "/mount":
+            self._send(404, {"error": "not found"})
+            return
+        try:
+            params = parse_qs(parsed.query)
+            do_unmount(
+                params.get("cuid", [""])[0],
+                params.get("repositoryName", [""])[0],
+                params.get("commitHash", [""])[0],
+            )
+            self._send(200, {"status": "ok"})
+        except ValueError as e:
+            self._send(400, {"error": str(e)})
+        except Exception as e:  # noqa: BLE001
+            log(f"unmount failed: {e}")
+            self._send(500, {"error": str(e)})
 
     def do_POST(self):
         if self.path != "/mount":

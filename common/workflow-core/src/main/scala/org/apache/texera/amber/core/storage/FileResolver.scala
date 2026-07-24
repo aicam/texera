@@ -217,6 +217,34 @@ object FileResolver {
   }
 
   /**
+    * Reverse of [[resolveDatasetVersion]]: given a LakeFS repository name and commit hash,
+    * recover the human-readable dataset version path /ownerEmail/datasetName/versionName.
+    * Used to label datasets mounted on a computing unit (which the mounter only tracks by
+    * repository/commit). Returns None if no matching dataset version exists.
+    */
+  def reverseResolveDatasetVersion(
+      repositoryName: String,
+      versionHash: String
+  ): Option[String] =
+    withTransaction(
+      SqlServer
+        .getInstance()
+        .createDSLContext()
+    ) { ctx =>
+      val record = ctx
+        .select(USER.EMAIL, DATASET.NAME, DATASET_VERSION.NAME)
+        .from(DATASET)
+        .join(USER)
+        .on(USER.UID.eq(DATASET.OWNER_UID))
+        .join(DATASET_VERSION)
+        .on(DATASET_VERSION.DID.eq(DATASET.DID))
+        .where(DATASET.REPOSITORY_NAME.eq(repositoryName))
+        .and(DATASET_VERSION.VERSION_HASH.eq(versionHash))
+        .fetchOne()
+      Option(record).map(r => s"/${r.value1()}/${r.value2()}/${r.value3()}")
+    }
+
+  /**
     * Checks if a given file path has a valid scheme.
     *
     * @param filePath The file path to check.
