@@ -36,9 +36,10 @@ class PythonUDFOpDescV2 extends LogicalOp {
   @JsonProperty(
     required = true,
     defaultValue =
-      "# If a dataset is mounted (see the \"Mount dataset\" property), its files\n" +
-        "# are available under the path in the MOUNTED_DATASET_PATH variable, e.g.\n" +
-        "#     open(f\"{MOUNTED_DATASET_PATH}/file.csv\")\n" +
+      "# Datasets mounted on this computing unit and bound to variables in the\n" +
+        "# \"Mounted dataset variables\" property are available as local paths. For\n" +
+        "# example, if you bind a dataset to the variable A:\n" +
+        "#     open(f\"{A}/file.csv\")\n" +
         "# \n" +
         "# Choose from the following templates:\n" +
         "# \n" +
@@ -97,8 +98,12 @@ class PythonUDFOpDescV2 extends LogicalOp {
   var outputColumns: List[Attribute] = List()
 
   @JsonProperty()
-  @JsonSchemaTitle("Mount dataset")
-  var mountDataset: String = ""
+  @JsonSchemaTitle("Mounted dataset variables")
+  @JsonPropertyDescription(
+    "Bind datasets mounted on this computing unit to variables. In your code, each " +
+      "variable holds the local filesystem path to that dataset."
+  )
+  var datasetVariables: List[DatasetVariableMapping] = List()
 
   override def getPhysicalOp(
       workflowId: WorkflowIdentity,
@@ -165,13 +170,34 @@ class PythonUDFOpDescV2 extends LogicalOp {
         trimmed
       }
 
-    // Resolve the dataset version to mount into a "<repositoryName>:<commitHash>" locator
-    val mountDatasetLocator =
-      if (mountDataset == null || mountDataset.trim.isEmpty) ""
+    // Resolve each bound dataset version to a "<repositoryName>:<commitHash>" locator,
+    // keyed by the Python variable it will be exposed as.
+    val variableBindings = Option(datasetVariables).getOrElse(List.empty).flatMap { mapping =>
+      val variableName = Option(mapping.variableName).map(_.trim).getOrElse("")
+      val datasetPath = Option(mapping.datasetPath).map(_.trim).getOrElse("")
+      if (variableName.isEmpty && datasetPath.isEmpty) None // ignore fully blank rows
       else {
-        val (repositoryName, versionHash) = FileResolver.resolveDatasetVersion(mountDataset.trim)
-        s"$repositoryName:$versionHash"
+        if (!variableName.matches("[A-Za-z_][A-Za-z0-9_]*"))
+          throw new RuntimeException(
+            s"'$variableName' is not a valid Python variable name for a mounted dataset."
+          )
+        if (datasetPath.isEmpty)
+          throw new RuntimeException(
+            s"No dataset selected for the mounted-dataset variable '$variableName'."
+          )
+        val (repositoryName, versionHash) = FileResolver.resolveDatasetVersion(datasetPath)
+        Some(variableName -> s"$repositoryName:$versionHash")
       }
+    }
+    val duplicateVariables =
+      variableBindings.map(_._1).groupBy(identity).collect {
+        case (name, xs) if xs.size > 1 => name
+      }
+    if (duplicateVariables.nonEmpty)
+      throw new RuntimeException(
+        s"Duplicate mounted-dataset variable name(s): ${duplicateVariables.mkString(", ")}"
+      )
+    val mountedDatasets = variableBindings.toMap
 
     physicalOp
       .withDerivePartition(_ => UnknownPartition())
@@ -181,7 +207,7 @@ class PythonUDFOpDescV2 extends LogicalOp {
       .withIsOneToManyOp(true)
       .withPropagateSchema(SchemaPropagationFunc(propagateSchema))
       .withPveName(pveName)
-      .withMountDataset(mountDatasetLocator)
+      .withMountedDatasets(mountedDatasets)
   }
 
   override def operatorInfo: OperatorInfo = {

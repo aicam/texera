@@ -60,7 +60,7 @@ class PythonWorkflowWorkerStartupConfigSpec extends AnyFlatSpec {
   private val expectedKeys = Set(
     "workerId",
     "outputPort",
-    "mountedDatasetPath",
+    "mountedDatasets",
     "loggerLevel",
     "rPath",
     "icebergCatalogType",
@@ -93,17 +93,23 @@ class PythonWorkflowWorkerStartupConfigSpec extends AnyFlatSpec {
     assert(map("s3LargeBinariesBaseUri") == "s3://bucket/uri")
   }
 
-  it should "leave the mounted dataset path empty when the worker mounts nothing" in {
+  it should "default the mounted datasets to an empty JSON object when the worker mounts nothing" in {
     val map =
       PythonWorkflowWorker.buildStartupConfig("worker-7", "6000", "/opt/R", "s3://bucket/uri").toMap
-    assert(map("mountedDatasetPath") == "")
+    assert(map("mountedDatasets") == "{}")
   }
 
-  it should "carry the mounted dataset path when the worker mounts a repository" in {
+  it should "carry the mounted dataset variable bindings when the worker mounts repositories" in {
     val map = PythonWorkflowWorker
-      .buildStartupConfig("worker-7", "6000", "/opt/R", "s3://bucket/uri", "/mnt/texera-mounts/r/c")
+      .buildStartupConfig(
+        "worker-7",
+        "6000",
+        "/opt/R",
+        "s3://bucket/uri",
+        """{"A":"/mnt/texera-mounts/r/c"}"""
+      )
       .toMap
-    assert(map("mountedDatasetPath") == "/mnt/texera-mounts/r/c")
+    assert(map("mountedDatasets") == """{"A":"/mnt/texera-mounts/r/c"}""")
   }
 
   it should "produce a config that round-trips through encodeStartupConfig" in {

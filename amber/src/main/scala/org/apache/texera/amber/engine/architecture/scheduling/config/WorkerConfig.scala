@@ -48,7 +48,7 @@ case object WorkerConfig {
         pveName = physicalOp.pveName,
         cuid = cuid,
         largeBinaryBaseUri = LargeBinaryManager.baseUriForExecution(physicalOp.executionId.id),
-        mountDataset = physicalOp.mountDataset
+        mountedDatasets = physicalOp.mountedDatasets
       )
     )
   }
@@ -61,7 +61,8 @@ case class WorkerConfig(
     // Coordinator-named, execution-scoped base URI under which this worker's large binaries
     // live; create() appends a unique suffix. Empty when large binaries are unconfigured.
     largeBinaryBaseUri: String = "",
-    // dataset version to FUSE-mount before the Python process starts,
-    // encoded as "<repositoryName>:<commitHash>"; empty = no mount
-    mountDataset: String = ""
+    // datasets to bind as local-path variables in the Python worker: variable name ->
+    // dataset-version locator "<repositoryName>:<commitHash>". Each is ensured mounted
+    // before the Python process starts; empty = no mounts.
+    mountedDatasets: Map[String, String] = Map.empty
 )

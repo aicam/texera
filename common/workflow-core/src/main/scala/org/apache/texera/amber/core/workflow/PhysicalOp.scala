@@ -215,9 +215,10 @@ case class PhysicalOp(
     suggestedWorkerNum: Option[Int] = None,
     // name of the PVE to execute within
     pveName: String = "",
-    // dataset version to FUSE-mount into the computing unit before this operator's
-    // Python workers start, encoded as "<repositoryName>:<commitHash>"; empty = no mount
-    mountDataset: String = ""
+    // datasets to expose to this operator's Python workers as local-path variables:
+    // variable name -> dataset-version locator "<repositoryName>:<commitHash>". Each is
+    // ensured mounted before the worker starts and bound to the variable as its mount path.
+    mountedDatasets: Map[String, String] = Map.empty
 ) extends LazyLogging {
 
   // all the "dependee" links are also blocking
@@ -396,8 +397,8 @@ case class PhysicalOp(
     this.copy(pveName = name)
   }
 
-  def withMountDataset(locator: String): PhysicalOp = {
-    this.copy(mountDataset = locator)
+  def withMountedDatasets(mountedDatasets: Map[String, String]): PhysicalOp = {
+    this.copy(mountedDatasets = mountedDatasets)
   }
 
   /**

@@ -86,14 +86,14 @@ object PythonWorkflowWorker {
       outputPort: String,
       rPath: String,
       largeBinaryBaseUri: String,
-      mountedDatasetPath: String = ""
+      mountedDatasets: String = "{}"
   ): Seq[(String, String)] = {
     val isPostgres = StorageConfig.icebergCatalogType == "postgres"
     val isRest = StorageConfig.icebergCatalogType == "rest"
     Seq(
       "workerId" -> workerId,
       "outputPort" -> outputPort,
-      "mountedDatasetPath" -> mountedDatasetPath,
+      "mountedDatasets" -> mountedDatasets,
       "loggerLevel" -> UdfConfig.pythonLogStreamHandlerLevel,
       "rPath" -> rPath,
       "icebergCatalogType" -> StorageConfig.icebergCatalogType,
@@ -254,12 +254,16 @@ class PythonWorkflowWorker(
 
     val pythonBin: String = choosePythonBin()
 
-    val mountedDatasetPath: String =
-      if (workerConfig.mountDataset.nonEmpty) {
-        DatasetMountManager.ensureMounted(workerConfig.mountDataset).toString
-      } else {
-        ""
+    // Ensure every bound dataset is mounted and resolve each to its in-pod path, keyed by
+    // the Python variable it will be exposed as. Serialized as a JSON object of
+    // {variableName: mountPath} so the startup config stays an all-string map.
+    val mountedDatasets: String = {
+      val variableToPath = workerConfig.mountedDatasets.map {
+        case (variableName, locator) =>
+          variableName -> DatasetMountManager.ensureMounted(locator).toString
       }
+      objectMapper.writeValueAsString(variableToPath)
+    }
 
     // Pass startup configuration to the Python worker by name, as a single JSON
     // object, rather than by argv position. This way the two sides agree by key,
@@ -270,7 +274,7 @@ class PythonWorkflowWorker(
       Integer.toString(pythonProxyServer.getPortNumber.get()),
       RENVPath,
       workerConfig.largeBinaryBaseUri,
-      mountedDatasetPath
+      mountedDatasets
     )
 
     pythonServerProcess = Process(
