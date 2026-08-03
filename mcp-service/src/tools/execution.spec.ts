@@ -97,15 +97,42 @@ describe("computing_unit_create", () => {
     expect(error).toContain("not supported here");
     expect(error).toContain("kubernetes, local");
   });
+
+  test("requires a uri for a local unit and does not create one without it", async () => {
+    const error = await harness.callExpectingError("computing_unit_create", { name: "new", unit_type: "local" });
+    expect(error).toContain("uri");
+    expect(error).toContain("http://localhost:8085");
+    expect(deployment.recorded("POST", "/api/computing-unit/create")).toHaveLength(0);
+  });
+
+  test("passes uri through for a local unit", async () => {
+    const result = await harness.call("computing_unit_create", {
+      name: "local-cu",
+      unit_type: "local",
+      uri: "http://localhost:8085",
+    });
+    expect(result).toContain("Started computing unit 5");
+
+    const [request] = deployment.recorded("POST", "/api/computing-unit/create");
+    const body = JSON.parse(request.body!);
+    expect(body).toMatchObject({ name: "local-cu", unitType: "local", uri: "http://localhost:8085" });
+  });
+
+  test("omits uri for a kubernetes unit", async () => {
+    await harness.call("computing_unit_create", { name: "k8s-cu" });
+    const [request] = deployment.recorded("POST", "/api/computing-unit/create");
+    expect(JSON.parse(request.body!)).not.toHaveProperty("uri");
+  });
 });
 
 describe("computing_unit_terminate", () => {
   test("requires a matching confirmation name", async () => {
-    deployment.post("/api/computing-unit/:cuid/terminate", () => text(""));
+    // The backend maps terminate as @DELETE; a POST would 405.
+    deployment.delete("/api/computing-unit/:cuid/terminate", () => text(""));
 
     const error = await harness.callExpectingError("computing_unit_terminate", { cuid: 1, confirm_name: "wrong" });
     expect(error).toContain("must match its name exactly");
-    expect(deployment.recorded("POST", "/api/computing-unit/:cuid/terminate")).toHaveLength(0);
+    expect(deployment.recorded("DELETE", "/api/computing-unit/:cuid/terminate")).toHaveLength(0);
 
     expect(await harness.call("computing_unit_terminate", { cuid: 1, confirm_name: "default-unit" })).toContain(
       "Terminated computing unit 1"

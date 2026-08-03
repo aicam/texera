@@ -105,7 +105,8 @@ export async function createComputingUnit(
 }
 
 export async function terminateComputingUnit(client: TexeraClient, cuid: number): Promise<void> {
-  await client.request<void>("computingUnit", `/api/computing-unit/${cuid}/terminate`, { method: "POST" });
+  // The backend maps this route as @DELETE (ComputingUnitManagingResource); POST returns 405.
+  await client.request<void>("computingUnit", `/api/computing-unit/${cuid}/terminate`, { method: "DELETE" });
 }
 
 export async function renameComputingUnit(client: TexeraClient, cuid: number, name: string): Promise<void> {

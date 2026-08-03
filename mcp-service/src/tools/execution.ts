@@ -182,7 +182,8 @@ export function registerExecutionTools(server: McpServer, context: McpContext): 
     description:
       "Start a computing unit to run workflows on. Resource values must come from the deployment's allowed " +
       "list — call this without cpu/memory to see the options. On Kubernetes the unit is a pod and may take " +
-      "a minute to become Running.",
+      "a minute to become Running. On a single-node/local deployment the engine already runs, so pass uri " +
+      "to point the unit at it.",
     inputSchema: {
       name: z.string().min(1).describe("Name for the unit"),
       cpu: z.string().optional().describe('CPU limit from the allowed list, e.g. "1"'),
@@ -192,8 +193,15 @@ export function registerExecutionTools(server: McpServer, context: McpContext): 
         .string()
         .optional()
         .describe('Unit type, e.g. "kubernetes" or "local". Defaults to the first supported type.'),
+      uri: z
+        .string()
+        .optional()
+        .describe('Required for "local" units: URL of the already-running engine, e.g. "http://localhost:8085".'),
     },
-    handler: async (args: { name: string; cpu?: string; memory?: string; gpu?: string; unit_type?: string }, ctx) => {
+    handler: async (
+      args: { name: string; cpu?: string; memory?: string; gpu?: string; unit_type?: string; uri?: string },
+      ctx
+    ) => {
       const [limits, types] = await Promise.all([
         getComputingUnitLimitOptions(ctx.client),
         getComputingUnitTypes(ctx.client),
@@ -205,6 +213,15 @@ export function registerExecutionTools(server: McpServer, context: McpContext): 
       }
       if (!types.typeOptions.includes(unitType)) {
         throw new ToolError(`Unit type "${unitType}" is not supported here. Options: ${types.typeOptions.join(", ")}.`);
+      }
+
+      // A "local" unit attaches to an engine that is already running rather than
+      // spawning a pod, so the backend requires a URL to reach it.
+      if (unitType === "local" && (args.uri === undefined || args.uri.trim() === "")) {
+        throw new ToolError(
+          'A "local" computing unit needs uri set to the running engine, e.g. "http://localhost:8085". ' +
+            "Kubernetes units spawn a pod and need no uri."
+        );
       }
 
       const cpu = args.cpu ?? limits.cpuLimitOptions[0];
@@ -230,6 +247,7 @@ export function registerExecutionTools(server: McpServer, context: McpContext): 
         // Give the JVM most of the container, leaving headroom for off-heap use.
         jvmMemorySize: memory,
         shmSize: "64Mi",
+        ...(args.uri !== undefined ? { uri: args.uri } : {}),
       });
 
       return (
