@@ -25,12 +25,14 @@ import org.apache.texera.amber.operator.huggingFace.codegen.{
   AudioTaskCodegen,
   CodegenContext,
   MediaGenCodegen,
+  QaRankingCodegen,
   TextGenCodegen
 }
 import org.apache.texera.amber.operator.metadata.OperatorGroupConstants
 import org.apache.texera.amber.pybuilder.PyStringTypes.EncodableString
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
+import org.apache.texera.amber.operator.metadata.OperatorMetadataGenerator
 
 class HuggingFaceInferenceOpDescSpec extends AnyFlatSpec with Matchers {
 
@@ -46,7 +48,10 @@ class HuggingFaceInferenceOpDescSpec extends AnyFlatSpec with Matchers {
       imageInput: EncodableString = "",
       inputImageColumn: EncodableString = "",
       audioInput: EncodableString = "",
-      inputAudioColumn: EncodableString = ""
+      inputAudioColumn: EncodableString = "",
+      contextColumn: EncodableString = "",
+      candidateLabels: EncodableString = "",
+      sentencesColumn: EncodableString = ""
   ): HuggingFaceInferenceOpDesc = {
     val desc = new HuggingFaceInferenceOpDesc()
     desc.hfApiToken = token
@@ -61,6 +66,9 @@ class HuggingFaceInferenceOpDescSpec extends AnyFlatSpec with Matchers {
     desc.inputImageColumn = inputImageColumn
     desc.audioInput = audioInput
     desc.inputAudioColumn = inputAudioColumn
+    desc.contextColumn = contextColumn
+    desc.candidateLabels = candidateLabels
+    desc.sentencesColumn = sentencesColumn
     desc
   }
 
@@ -104,6 +112,23 @@ class HuggingFaceInferenceOpDescSpec extends AnyFlatSpec with Matchers {
     code should include("self.TEMPERATURE")
     // Parse — text-gen pulls choices[0].message.content out of the response.
     code should include("""body["choices"][0]["message"]["content"]""")
+  }
+
+  it should "send the provider-specific model id on provider-scoped chat routes" in {
+    val code = makeDesc().generatePythonCode()
+    // hf-inference's chat-completions endpoint carries the model in the URL path.
+    code should include(
+      "https://router.huggingface.co/hf-inference/models/{self.MODEL_ID}/v1/chat/completions"
+    )
+    // The chat branch posts a per-provider copy of the payload with the
+    // provider's own model name (providerId) — the Hub ID is only valid on
+    // hf-inference itself. Matched as one block so the assertion is anchored
+    // to the chat branch: pipeline routes elsewhere legitimately post the
+    // shared pipeline_payload directly.
+    code should include(
+      "chat_payload = {**pipeline_payload, \"model\": provider_id}\n" +
+        "                    resp = requests.post(url, headers=json_headers, json=chat_payload, timeout=120)"
+    )
   }
 
   it should
@@ -163,6 +188,9 @@ class HuggingFaceInferenceOpDescSpec extends AnyFlatSpec with Matchers {
     desc.inputImageColumn = null
     desc.audioInput = null
     desc.inputAudioColumn = null
+    desc.contextColumn = null
+    desc.candidateLabels = null
+    desc.sentencesColumn = null
     val code = desc.generatePythonCode()
     code should include("class ProcessTableOperator(UDFTableOperator):")
     code should include("def open(self):")
@@ -292,6 +320,41 @@ class HuggingFaceInferenceOpDescSpec extends AnyFlatSpec with Matchers {
     code should not include "requests.get(audio_input"
     code should not include "os.path.exists(audio_input)"
     code should not include "open(audio_input"
+  }
+
+  it should "re-validate every redirect hop in _fetch_remote_url instead of following blindly" in {
+    // requests follows redirects by default, which would skip the scheme/IP
+    // checks on the redirect target: a 302 to http://169.254.169.254/... or an
+    // internal host would be fetched. The helper must disable automatic
+    // redirects and re-run _validate_remote_url on each hop.
+    val code = makeDesc(task = "image-to-image", inputImageColumn = "img").generatePythonCode()
+    // Automatic redirect-following is off, and no redirect-following variant
+    // of the fetch remains anywhere in the helper.
+    code should include(
+      "resp = requests.get(current_url, timeout=120, stream=True, allow_redirects=False)"
+    )
+    code should not include "resp = requests.get(url, timeout=120, stream=True)"
+    // The per-hop validator exists and runs BEFORE the request inside the loop.
+    code should include("def _validate_remote_url(self, url):")
+    val validateCall = code.indexOf("self._validate_remote_url(current_url)")
+    val fetchCall = code.indexOf("resp = requests.get(current_url")
+    validateCall should be > 0
+    fetchCall should be > validateCall
+    // Every redirect status is intercepted; relative Location values are
+    // resolved against the current URL before re-validation.
+    code should include("if resp.status_code in (301, 302, 303, 307, 308):")
+    code should include("current_url = _urljoin(current_url, location)")
+    // Degenerate redirects fail closed: missing Location and unbounded chains.
+    code should include("Redirect response has no Location header.")
+    code should include("MAX_REDIRECT_HOPS = 5")
+    code should include("Too many redirects")
+    // The validator keeps the full pre-existing checks (https-only + public
+    // address) so each hop gets the same scrutiny as the original URL, and
+    // takes an allowlist stance (globally-routable only) that also blocks the
+    // CGNAT/shared range the predicate list alone misses.
+    code should include("""if parsed.scheme != "https":""")
+    code should include("not ip.is_global")
+    code should include("ip.is_multicast")
   }
 
   it should "treat pandas NA sentinels (NaN, pd.NA, NaT) as missing in _read_binary_value" in {
@@ -497,6 +560,77 @@ class HuggingFaceInferenceOpDescSpec extends AnyFlatSpec with Matchers {
     }
   }
 
+  "qa and ranking task family" should
+    "route question-answering through QaRankingCodegen with context-column validation" in {
+    val code = makeDesc(task = "question-answering", contextColumn = "context").generatePythonCode()
+    code should include("self.CONTEXT_COLUMN = ")
+    code should include("""if task == "question-answering":""")
+    code should include("ctx_col = self.CONTEXT_COLUMN")
+    code should include("Context column")
+    code should include("""payload = {"inputs": {"question": prompt_value, "context": ctx_val}}""")
+    code should include(
+      """return body.get("answer", json.dumps(body)) if isinstance(body, dict) else json.dumps(body)"""
+    )
+  }
+
+  it should "route table-question-answering with a precomputed table payload" in {
+    val code = makeDesc(task = "table-question-answering").generatePythonCode()
+    code should include("""if task == "table-question-answering":""")
+    code should include("table_dict = {}")
+    code should include("""payload = {"inputs": {"query": prompt_value, "table": table_dict}}""")
+    code should include(
+      """return body.get("answer", json.dumps(body)) if isinstance(body, dict) else json.dumps(body)"""
+    )
+  }
+
+  it should "route zero-shot-classification with candidate labels" in {
+    val code =
+      makeDesc(task = "zero-shot-classification", candidateLabels = "positive,negative")
+        .generatePythonCode()
+    code should include("self.CANDIDATE_LABELS = ")
+    code should include("""if task == "zero-shot-classification":""")
+    code should include(
+      "labels = [l.strip() for l in str(self.CANDIDATE_LABELS).split"
+    )
+    code should include("Candidate Labels are required for zero-shot-classification.")
+    code should include("""elif task == "zero-shot-classification":""")
+    code should include("labels = [l.strip() for l in str(self.CANDIDATE_LABELS).split")
+    code should include(""""parameters": {"candidate_labels": labels}""")
+  }
+
+  it should "route sentence-similarity and text-ranking with sentences-column validation" in {
+    Seq("sentence-similarity", "text-ranking").foreach { taskName =>
+      val code = makeDesc(task = taskName, sentencesColumn = "sentences").generatePythonCode()
+      code should include("self.SENTENCES_COLUMN = ")
+      code should include("sent_col = self.SENTENCES_COLUMN")
+      code should include("Sentences column")
+      if (taskName == "sentence-similarity") {
+        code should include("""elif task == "sentence-similarity":""")
+        code should include(""""source_sentence": prompt_value""")
+        code should include(""""sentences": sentences_list""")
+      } else {
+        code should include("""elif task == "text-ranking":""")
+        code should include(""""query": prompt_value""")
+        code should include(""""texts": sentences_list""")
+      }
+    }
+  }
+
+  it should "register all qa and ranking task strings under the dispatcher" in {
+    QaRankingCodegen.tasks should contain allOf (
+      "question-answering",
+      "table-question-answering",
+      "zero-shot-classification",
+      "sentence-similarity",
+      "text-ranking"
+    )
+    QaRankingCodegen.tasks.foreach { t =>
+      val code = makeDesc(task = t, contextColumn = "context", sentencesColumn = "sentences")
+        .generatePythonCode()
+      code should include("""if task == "question-answering":""")
+    }
+  }
+
   "getOutputSchemas" should "add the result column as a STRING to the inherited schema" in {
     val desc = makeDesc(resultColumn = "answer")
     val inputSchema = Schema().add("prompt", AttributeType.STRING)
@@ -513,5 +647,44 @@ class HuggingFaceInferenceOpDescSpec extends AnyFlatSpec with Matchers {
     val out = desc.getOutputSchemas(Map(PortIdentity(0) -> inputSchema))
     val outSchema = out(desc.operatorInfo.outputPorts.head.id)
     outSchema.getAttributeNames.contains("hf_response") shouldBe true
+  }
+
+  it should "validate config with raise ValueError rather than assert (which python -O strips)" in {
+    val code = makeDesc().generatePythonCode()
+    // No `assert` in the generated script — asserts are removed under `python -O`,
+    // silently disabling the checks, and raise AssertionError rather than ValueError.
+    code should not include ("assert ")
+    // The pre-loop config checks now raise ValueError explicitly.
+    code should include("if prompt_col not in table.columns:")
+    code should include("if not (ctx_col and ctx_col in table.columns):")
+    code should include("if not (sent_col and sent_col in table.columns):")
+  }
+
+  it should "validate base64 in the binary-column fallback so plain text isn't decoded to garbage" in {
+    val code = makeDesc().generatePythonCode()
+    // validate=True makes b64decode reject non-base64 input, so real text falls
+    // through to utf-8 instead of decoding to garbage bytes.
+    code should include("base64.b64decode(val, validate=True)")
+  }
+
+  it should "treat a 401 as retryable so one provider's auth failure doesn't abort the fallback" in {
+    val code = makeDesc().generatePythonCode()
+    // 401 is in the retryable set -> the loop tries the next provider instead of bailing.
+    code should include("RETRYABLE = (400, 401, 404, 422, 429, 502, 503)")
+    // The old short-circuit (return immediately on the first 401) must be gone.
+    code should not include ("            if resp.status_code == 401:\n                return resp, None")
+  }
+
+  it should "mask the API token field as a password widget in the generated schema" in {
+    val tokenProp = OperatorMetadataGenerator
+      .generateOperatorJsonSchema(classOf[HuggingFaceInferenceOpDesc])
+      .path("properties")
+      .path("hfApiToken")
+    tokenProp
+      .path("widget")
+      .path("formlyConfig")
+      .path("templateOptions")
+      .path("type")
+      .asText() shouldBe "password"
   }
 }

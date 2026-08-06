@@ -130,6 +130,13 @@ describe("UserDatasetComponent", () => {
     });
   });
 
+  describe("default sort", () => {
+    it("defaults to CreateTimeDesc so newest datasets appear first", () => {
+      // Datasets have no last-modified time, so EditTimeDesc would leave the sort key NULL.
+      expect(component.sortMethod).toBe(SortMethod.CreateTimeDesc);
+    });
+  });
+
   describe("ngAfterViewInit", () => {
     it("subscribes to userChanged and calls search on each emission", () => {
       const searchSpy = vi.spyOn(component, "search").mockResolvedValue();
@@ -307,6 +314,57 @@ describe("UserDatasetComponent", () => {
 
       expect(datasetServiceMock.deleteDatasets).toHaveBeenCalledWith(2);
       expect(searchResultsStub.entries).toEqual([e1, e3]);
+    });
+  });
+
+  describe("view mode toggle", () => {
+    const VIEW_MODE_KEY = "texera.userDataset.viewMode";
+
+    afterEach(() => localStorage.removeItem(VIEW_MODE_KEY));
+
+    it("setViewType updates viewType, persists it, and is a no-op when unchanged", () => {
+      // viewType defaults to "card", so switching to "list" is the real change
+      component.setViewType("list");
+      expect(component.viewType).toBe("list");
+      expect(localStorage.getItem(VIEW_MODE_KEY)).toBe("list");
+
+      // setting the same value should not write again
+      localStorage.removeItem(VIEW_MODE_KEY);
+      component.setViewType("list");
+      expect(localStorage.getItem(VIEW_MODE_KEY)).toBeNull();
+
+      component.setViewType("card");
+      expect(component.viewType).toBe("card");
+      expect(localStorage.getItem(VIEW_MODE_KEY)).toBe("card");
+    });
+
+    const makeFreshComponent = () => {
+      const userServiceMock = {
+        userChanged: () => new Subject<User | undefined>().asObservable(),
+        isLogin: () => true,
+        getCurrentUser: () => ({ uid: 42 }) as User,
+      };
+      return new UserDatasetComponent(
+        modalServiceMock as any,
+        userServiceMock as any,
+        routerMock as any,
+        searchServiceMock as any,
+        datasetServiceMock as any,
+        messageMock as any
+      );
+    };
+
+    it("defaults viewType to card when nothing is stored", () => {
+      localStorage.removeItem(VIEW_MODE_KEY);
+      expect(makeFreshComponent().viewType).toBe("card");
+    });
+
+    it("initializes viewType to list only when explicitly stored", () => {
+      localStorage.setItem(VIEW_MODE_KEY, "list");
+      expect(makeFreshComponent().viewType).toBe("list");
+
+      localStorage.setItem(VIEW_MODE_KEY, "card");
+      expect(makeFreshComponent().viewType).toBe("card");
     });
   });
 });
