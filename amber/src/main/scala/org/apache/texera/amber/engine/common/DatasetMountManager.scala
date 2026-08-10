@@ -86,19 +86,59 @@ object DatasetMountManager extends LazyLogging {
     s"http://$nodeIp:$port"
   }
 
+  /** Parse a locator "<repositoryName>:<commitHash>" into its two parts. */
+  private def parseLocator(locator: String): (String, String) =
+    locator.split(":", 2) match {
+      case Array(repo, commit) if repo.nonEmpty && commit.nonEmpty => (repo, commit)
+      case _ =>
+        throw new IllegalArgumentException(
+          s"Invalid dataset mount locator '$locator'; expected <repositoryName>:<commitHash>."
+        )
+    }
+
+  /** In-pod mount point a locator resolves to, whether or not it is mounted yet. */
+  private def mountPointFor(locator: String): Path = {
+    val (repositoryName, commitHash) = parseLocator(locator)
+    inPodMountRoot.resolve(repositoryName).resolve(commitHash)
+  }
+
+  /**
+    * PLANNING/EXECUTION entry point: ensure every locator in the given set is mounted.
+    * Called once per region by the scheduler before its workers start, so the mount is
+    * performed and deduplicated in one place instead of once per worker.
+    *
+    * Warning: this runs the mount in whatever process calls it, and a FUSE mount is only
+    * visible inside that process's mount namespace. It works today because the controller
+    * (scheduler) and all of a region's workers share a single computing-unit pod. If
+    * workers ever become separate pods/nodes (a distributed cluster of workers), mounting
+    * here would only satisfy the controller's pod; the execution step would then have to be
+    * dispatched to each worker's pod/node so the mount lands in that worker's namespace.
+    */
+  def ensureAllMounted(locators: Set[String]): Unit = locators.foreach(ensureMounted)
+
+  /**
+    * LOOKUP entry point: resolve a locator to its in-pod mount path WITHOUT mounting.
+    * Assumes planning (`ensureAllMounted`) has already mounted it; fails loudly otherwise.
+    * This is what a worker calls to bind an already-mounted dataset to its runtime.
+    */
+  def resolveMountPath(locator: String): Path = {
+    val mountPoint = mountPointFor(locator)
+    if (!isMounted(mountPoint)) {
+      throw new RuntimeException(
+        s"Dataset $locator is not mounted at $mountPoint; " +
+          "region planning should have mounted it before the worker started."
+      )
+    }
+    mountPoint
+  }
+
   /**
     * Ensure the dataset version identified by the locator "<repositoryName>:<commitHash>"
     * is mounted, and return the local (in-pod) mount point. Thread-safe and idempotent.
     */
   def ensureMounted(locator: String): Path =
     synchronized {
-      val (repositoryName, commitHash) = locator.split(":", 2) match {
-        case Array(repo, commit) if repo.nonEmpty && commit.nonEmpty => (repo, commit)
-        case _ =>
-          throw new IllegalArgumentException(
-            s"Invalid dataset mount locator '$locator'; expected <repositoryName>:<commitHash>."
-          )
-      }
+      val (repositoryName, commitHash) = parseLocator(locator)
 
       val mountPoint = inPodMountRoot.resolve(repositoryName).resolve(commitHash)
       if (isMounted(mountPoint)) {

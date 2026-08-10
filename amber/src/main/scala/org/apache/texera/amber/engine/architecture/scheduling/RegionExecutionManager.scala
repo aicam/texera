@@ -53,6 +53,7 @@ import org.apache.texera.amber.engine.architecture.scheduling.config.{
 import org.apache.texera.amber.engine.architecture.sendsemantics.partitionings.Partitioning
 import org.apache.texera.amber.engine.architecture.worker.statistics.WorkerState
 import org.apache.texera.amber.engine.common.AmberLogging
+import org.apache.texera.amber.engine.common.DatasetMountManager
 import org.apache.texera.amber.engine.common.FutureBijection._
 import org.apache.texera.amber.engine.common.rpc.AsyncRPCClient
 import org.apache.texera.amber.engine.common.virtualidentity.util.COORDINATOR
@@ -60,7 +61,7 @@ import org.apache.texera.web.SessionState
 import org.apache.texera.web.model.websocket.event.RegionStateEvent
 
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 import scala.concurrent.duration.{Duration => ScalaDuration}
 
 object RegionExecutionManager {
@@ -127,6 +128,9 @@ class RegionExecutionManager(
   )
   private val terminationFutureRef: AtomicReference[Future[Unit]] = new AtomicReference(null)
   private val killRetryTimer: Timer = new JavaTimer(true)
+  // Region datasets are mounted at most once; both launch phases funnel through the same
+  // launchPhaseExecutionInternal, so this guards against a redundant second mount pass.
+  private val datasetsMounted: AtomicBoolean = new AtomicBoolean(false)
 
   /**
     * Sync the status of `RegionExecution` and transition this manager's phase to `Completed` only when the
@@ -337,6 +341,32 @@ class RegionExecutionManager(
   }
 
   /**
+    * PLANNING: gather the deduplicated set of dataset-version locators every operator in
+    * this region asks to mount, and ensure them all mounted once, before any worker starts.
+    * Operator-agnostic: any operator that populates `PhysicalOp.mountedDatasets` participates
+    * with no mount code of its own. Runs at most once per region.
+    *
+    * Warning: the mount is executed here, in the controller's process, and a FUSE mount is
+    * only visible inside the mount namespace it lands in. This is correct only because the
+    * controller and all of a region's workers currently share one computing-unit pod. If
+    * workers ever become a distributed cluster (separate pods/nodes), mounting here would
+    * satisfy only the controller's pod: the execution would then need to be dispatched to
+    * each worker's pod/node so the mount appears in that worker's namespace. Intentionally
+    * not handled here.
+    */
+  private def mountRegionDatasets(): Future[Unit] = {
+    if (!datasetsMounted.compareAndSet(false, true)) {
+      return Future.Unit
+    }
+    val locators = region.getOperators.flatMap(_.mountedDatasets.values).toSet
+    if (locators.isEmpty) {
+      Future.Unit
+    } else {
+      Future(DatasetMountManager.ensureAllMounted(locators))
+    }
+  }
+
+  /**
     * Unified logic for launching either of the two phases asynchronously.
     */
   private def launchPhaseExecutionInternal(
@@ -367,6 +397,7 @@ class RegionExecutionManager(
       )
     )
     Future(())
+      .flatMap(_ => mountRegionDatasets())
       .flatMap(_ => initExecutors(operatorsToRun, resourceConfig))
       .flatMap(_ => assignPortsLogic())
       .flatMap(_ => connectChannelsLogic())

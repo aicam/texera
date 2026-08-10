@@ -254,13 +254,14 @@ class PythonWorkflowWorker(
 
     val pythonBin: String = choosePythonBin()
 
-    // Ensure every bound dataset is mounted and resolve each to its in-pod path, keyed by
-    // the Python variable it will be exposed as. Serialized as a JSON object of
-    // {variableName: mountPath} so the startup config stays an all-string map.
+    // Resolve each bound dataset to its already-mounted in-pod path, keyed by the Python
+    // variable it will be exposed as. The mount itself is performed once per region by the
+    // scheduler (see RegionExecutionManager); here we only look the path up. Serialized as a
+    // JSON object of {variableName: mountPath} so the startup config stays an all-string map.
     val mountedDatasets: String = {
       val variableToPath = workerConfig.mountedDatasets.map {
         case (variableName, locator) =>
-          variableName -> DatasetMountManager.ensureMounted(locator).toString
+          variableName -> DatasetMountManager.resolveMountPath(locator).toString
       }
       objectMapper.writeValueAsString(variableToPath)
     }
