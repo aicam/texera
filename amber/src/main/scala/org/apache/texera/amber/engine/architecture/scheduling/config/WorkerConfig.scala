@@ -62,7 +62,8 @@ case class WorkerConfig(
     // live; create() appends a unique suffix. Empty when large binaries are unconfigured.
     largeBinaryBaseUri: String = "",
     // datasets to bind as local-path variables in the Python worker: variable name ->
-    // dataset-version locator "<repositoryName>:<commitHash>". Each is ensured mounted
-    // before the Python process starts; empty = no mounts.
+    // dataset-version locator "<repositoryName>:<commitHash>". The scheduler mounts these
+    // once per region before workers start; the worker only resolves each to its path.
+    // Empty = no mounts.
     mountedDatasets: Map[String, String] = Map.empty
 )
