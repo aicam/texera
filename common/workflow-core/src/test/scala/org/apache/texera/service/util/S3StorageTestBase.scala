@@ -42,7 +42,9 @@ trait S3StorageTestBase extends BeforeAndAfterAll { this: Suite =>
 object S3StorageTestBase {
   private lazy val container: MinIOContainer = {
     val c = MinIOContainer(
-      dockerImageName = DockerImageName.parse("minio/minio:RELEASE.2025-02-28T09-55-16Z"),
+      dockerImageName = DockerImageName
+        .parse("quay.io/minio/minio:RELEASE.2025-02-28T09-55-16Z")
+        .asCompatibleSubstituteFor("minio/minio"),
       userName = "texera_minio",
       password = "password"
     )

@@ -88,7 +88,9 @@ class LakeFSStorageClientMtimeSpec
       s"@${postgres.container.getNetworkAliases.get(0)}:5432/${postgres.databaseName}?sslmode=disable"
 
   private val minio: MinIOContainer = MinIOContainer(
-    dockerImageName = DockerImageName.parse("minio/minio:RELEASE.2025-02-28T09-55-16Z"),
+    dockerImageName = DockerImageName
+      .parse("quay.io/minio/minio:RELEASE.2025-02-28T09-55-16Z")
+      .asCompatibleSubstituteFor("minio/minio"),
     userName = minioUser,
     password = minioPassword
   )

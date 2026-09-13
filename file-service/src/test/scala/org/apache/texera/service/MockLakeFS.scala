@@ -64,7 +64,9 @@ trait MockLakeFS extends ForAllTestContainer with BeforeAndAfterAll { self: Suit
 
   // MinIO for object storage
   val minio = MinIOContainer(
-    dockerImageName = DockerImageName.parse("minio/minio:RELEASE.2025-02-28T09-55-16Z"),
+    dockerImageName = DockerImageName
+      .parse("quay.io/minio/minio:RELEASE.2025-02-28T09-55-16Z")
+      .asCompatibleSubstituteFor("minio/minio"),
     userName = "texera_minio",
     password = "password"
   )

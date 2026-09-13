@@ -18,7 +18,7 @@
 name: texera-lakefs
 services:
   minio:
-    image: minio/minio:RELEASE.2025-02-28T09-55-16Z
+    image: quay.io/minio/minio:RELEASE.2025-02-28T09-55-16Z
     container_name: texera-lakefs-minio
     restart: unless-stopped
     ports:

@@ -19,7 +19,7 @@ version: '3.8'
 
 services:
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     container_name: minio
     ports:
       - "9500:9000"   # MinIO API
