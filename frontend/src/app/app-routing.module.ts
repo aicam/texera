@@ -60,6 +60,14 @@ routes.push({
   component: TexeraLoginComponent,
 });
 
+// A clinician's labeling page, opened from a link a developer generates; the
+// link itself is the credential, so it renders without the dashboard shell or login.
+routes.push({
+  path: "label/:token",
+  loadComponent: () =>
+    import("./workspace/component/labeling-page/labeling-page.component").then(m => m.LabelingPageComponent),
+});
+
 routes.push({
   path: "callback",
   children: [{ path: "orcid", component: OrcidCallbackComponent }],

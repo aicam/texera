@@ -36,6 +36,7 @@ import org.apache.texera.service.resource.{
   DatasetAccessResource,
   DatasetResource,
   HealthCheckResource,
+  LabelingLinkResource,
   ModelAccessResource,
   ModelResource
 }
@@ -95,6 +96,7 @@ class FileService extends Application[FileServiceConfiguration] with LazyLogging
     environment.jersey.register(classOf[DatasetAccessResource])
     environment.jersey.register(classOf[ModelResource])
     environment.jersey.register(classOf[ModelAccessResource])
+    environment.jersey.register(classOf[LabelingLinkResource])
 
     // Register the read-only S3 proxy servlet for in-pod GeeseFS dataset mounts. GeeseFS
     // authenticates with the pod's per-user JWT (carried as its S3 access key) and issues

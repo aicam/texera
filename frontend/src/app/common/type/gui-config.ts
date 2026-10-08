@@ -36,6 +36,7 @@ export interface GuiConfig {
   formViewEnabled: boolean;
   productionSharedEditingServer: boolean;
   pythonLanguageServerPort: string;
+  labelingLinkBaseUrl: string;
   defaultDataTransferBatchSize: number;
   defaultExecutionMode: ExecutionMode;
   workflowEmailNotificationEnabled: boolean;

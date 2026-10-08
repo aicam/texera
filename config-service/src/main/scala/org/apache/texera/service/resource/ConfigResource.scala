@@ -99,6 +99,7 @@ class ConfigResource {
       "warehouseEnabled" -> StorageConfig.warehouseEnabled,
       "operatorConsoleMessageBufferSize" -> GuiConfig.guiWorkflowWorkspaceOperatorConsoleMessageBufferSize,
       "pythonLanguageServerPort" -> GuiConfig.guiWorkflowWorkspacePythonLanguageServerPort,
+      "labelingLinkBaseUrl" -> GuiConfig.guiWorkflowWorkspaceLabelingLinkBaseUrl,
       "activeTimeInMinutes" -> GuiConfig.guiWorkflowWorkspaceActiveTimeInMinutes,
       "copilotEnabled" -> GuiConfig.guiWorkflowWorkspaceCopilotEnabled,
       "limitColumns" -> GuiConfig.guiWorkflowWorkspaceLimitColumns,

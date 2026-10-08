@@ -17,16 +17,7 @@
  * under the License.
  */
 
-import {
-  ChangeDetectorRef,
-  Component,
-  ElementRef,
-  HostListener,
-  OnDestroy,
-  OnInit,
-  Type,
-  ViewChild,
-} from "@angular/core";
+import { ChangeDetectorRef, Component, ElementRef, HostListener, OnInit, Type, ViewChild } from "@angular/core";
 import { merge } from "rxjs";
 import { ExecuteWorkflowService } from "../../service/execute-workflow/execute-workflow.service";
 import { WorkflowActionService } from "../../service/workflow-graph/model/workflow-action.service";
@@ -43,7 +34,6 @@ import { ErrorFrameComponent } from "./error-frame/error-frame.component";
 import { WorkflowConsoleService } from "../../service/workflow-console/workflow-console.service";
 import { NzResizeEvent, NzResizableDirective, NzResizeHandlesComponent } from "ng-zorro-antd/resizable";
 import { VisualizationFrameContentComponent } from "../visualization-panel-content/visualization-frame-content.component";
-import { calculateTotalTranslate3d } from "../../../common/util/panel-dock";
 import { isDefined } from "../../../common/util/predicate";
 import { CdkDragEnd, CdkDrag, CdkDragHandle } from "@angular/cdk/drag-drop";
 import { PanelService } from "../../service/panel/panel.service";
@@ -58,9 +48,14 @@ import { NzIconDirective } from "ng-zorro-antd/icon";
 import { NzSpaceCompactItemDirective } from "ng-zorro-antd/space";
 import { NzButtonComponent } from "ng-zorro-antd/button";
 import { NzTabsComponent, NzTabComponent } from "ng-zorro-antd/tabs";
+import { ReviewFrameComponent } from "./review-frame/review-frame.component";
 
 export const DEFAULT_WIDTH = 800;
 export const DEFAULT_HEIGHT = 500;
+export const CLOSED_HEIGHT = 32.5;
+/** The container sits this far above the canvas's bottom edge before any drag (see `top` in the scss). */
+const NATURAL_TOP_OFFSET = 300;
+const LEGACY_STYLE_KEY = "result-panel-style";
 /**
  * ResultPanelComponent is the bottom level area that displays the
  *  execution result of a workflow after the execution finishes.
@@ -92,7 +87,7 @@ export const DEFAULT_HEIGHT = 500;
     KeyValuePipe,
   ],
 })
-export class ResultPanelComponent implements OnInit, OnDestroy {
+export class ResultPanelComponent implements OnInit {
   @ViewChild("dynamicComponent")
   componentOutlets!: ElementRef;
   frameComponentConfigs: Map<string, { component: Type<any>; componentInputs: {} }> = new Map();
@@ -103,6 +98,12 @@ export class ResultPanelComponent implements OnInit, OnDestroy {
   operatorTitle = "";
   dragPosition = { x: 0, y: 0 };
   returnPosition = { x: 0, y: 0 };
+  /**
+   * A docked panel follows the canvas's bottom-left corner as it opens and resizes; a dragged one
+   * stays where it was dropped until it is closed, which always docks it, so its open button is
+   * always at the bottom-left.
+   */
+  docked = true;
 
   // the highlighted operator ID for display result table / visualization / breakpoint
   currentOperatorId?: string | undefined;
@@ -120,18 +121,21 @@ export class ResultPanelComponent implements OnInit, OnDestroy {
     private resizeService: PanelResizeService,
     private panelService: PanelService
   ) {
+    // The panel starts closed, and a closed panel is a bar at the canvas's bottom-left. Restoring
+    // the last open height here left a closed panel 500px tall, with its open button floating
+    // far above the corner where people click.
     this.width = 0;
-    this.height = Number(localStorage.getItem("result-panel-height")) || this.height;
+    this.height = CLOSED_HEIGHT;
     this.resizeService.changePanelSize(this.width, this.height);
   }
 
   ngOnInit(): void {
-    const style = localStorage.getItem("result-panel-style");
-    if (style) document.getElementById("result-container")!.style.cssText = style;
-    const translates = document.getElementById("result-container")!.style.transform;
-    const [xOffset, yOffset, _] = calculateTotalTranslate3d(translates);
-    this.returnPosition = { x: -xOffset, y: -yOffset };
-    this.updateReturnPosition(DEFAULT_HEIGHT, this.height);
+    // The container's whole cssText used to be saved and restored; the drag library prepends its
+    // own transform to whatever it finds, so that string grew on every visit until the panel opened
+    // off-screen. A page now always starts docked, and the old key is dropped.
+    localStorage.removeItem(LEGACY_STYLE_KEY);
+    this.returnPosition = this.dockedPosition(this.height);
+    this.dragPosition = { ...this.returnPosition };
     this.registerAutoRerenderResultPanel();
     this.registerAutoOpenResultPanel();
     this.registerResultClearedHandler();
@@ -153,17 +157,6 @@ export class ResultPanelComponent implements OnInit, OnDestroy {
     // two views: the highlight and the results are kept in root-provided services, so this panel
     // would come up empty beside an operator that is still shown selected, until the next event.
     this.rerenderResultPanel();
-  }
-
-  @HostListener("window:beforeunload")
-  ngOnDestroy(): void {
-    localStorage.setItem("result-panel-width", String(this.width));
-    localStorage.setItem("result-panel-height", String(this.height));
-
-    const resultContainer = document.getElementById("result-container");
-    if (resultContainer) {
-      localStorage.setItem("result-panel-style", resultContainer.style.cssText);
-    }
   }
 
   handleResultPanelForVersionPreview() {
@@ -300,6 +293,14 @@ export class ResultPanelComponent implements OnInit, OnDestroy {
       if (this.workflowConsoleService.hasConsoleMessages(this.currentOperatorId) || isPythonUdf(operator)) {
         this.displayConsole(this.currentOperatorId, isPythonUdf(operator));
       }
+      if (operator.operatorType === "ReviewAndCorrect") {
+        // Its rows are browsed in Records, so an empty Result tab would only hide the Review tab.
+        this.frameComponentConfigs.delete("Result");
+        this.frameComponentConfigs.set("Review", {
+          component: ReviewFrameComponent,
+          componentInputs: { operatorId: this.currentOperatorId },
+        });
+      }
     }
   }
 
@@ -389,15 +390,52 @@ export class ResultPanelComponent implements OnInit, OnDestroy {
     this.height = DEFAULT_HEIGHT;
     this.width = DEFAULT_WIDTH;
     this.resizeService.changePanelSize(this.width, this.height);
+    this.place();
   }
 
   closePanel() {
-    this.height = 32.5;
+    this.height = CLOSED_HEIGHT;
     this.width = 0;
+    this.docked = true;
+    this.place();
   }
 
   resetPanelPosition() {
+    this.docked = true;
     this.dragPosition = { x: this.returnPosition.x, y: this.returnPosition.y };
+  }
+
+  @HostListener("window:resize")
+  onWindowResize(): void {
+    if (!this.docked) {
+      this.dragPosition = this.clamp(this.dragPosition);
+    }
+  }
+
+  /** Where the drag offset puts a panel of `height` flush with the canvas's bottom-left corner. */
+  dockedPosition(height: number): { x: number; y: number } {
+    return { x: 0, y: NATURAL_TOP_OFFSET - height };
+  }
+
+  /** After a size change: a docked panel re-docks, a dragged one is pulled back inside the canvas. */
+  private place(): void {
+    this.returnPosition = this.dockedPosition(this.height);
+    this.dragPosition = this.docked ? { ...this.returnPosition } : this.clamp(this.dragPosition);
+  }
+
+  /** Keeps the whole panel inside the canvas, so no window size or old position can hide it. */
+  clamp(position: { x: number; y: number }): { x: number; y: number } {
+    const canvas = document.querySelector("texera-workspace")?.getBoundingClientRect();
+    if (!canvas || canvas.height === 0) {
+      return position;
+    }
+    const minY = NATURAL_TOP_OFFSET - canvas.height;
+    const maxY = NATURAL_TOP_OFFSET - this.height;
+    const maxX = Math.max(0, canvas.width - this.width);
+    return {
+      x: Math.min(Math.max(position.x, 0), maxX),
+      y: Math.min(Math.max(position.y, minY), Math.max(minY, maxY)),
+    };
   }
 
   isPanelDocked() {
@@ -417,6 +455,7 @@ export class ResultPanelComponent implements OnInit, OnDestroy {
      */
     const { x, y } = source.getFreeDragPosition();
     this.dragPosition = { x: x, y: y };
+    this.docked = this.isPanelDocked();
     let visualizationResult = this.componentOutlets.nativeElement.querySelector("#html-content");
     if (visualizationResult !== null) {
       visualizationResult.style.zIndex = 0;
@@ -426,6 +465,9 @@ export class ResultPanelComponent implements OnInit, OnDestroy {
   onResize({ width, height }: NzResizeEvent) {
     cancelAnimationFrame(this.id);
     this.updateReturnPosition(this.height, height);
+    if (this.docked) {
+      this.dragPosition = { ...this.returnPosition };
+    }
     this.id = requestAnimationFrame(() => {
       this.width = width!;
       this.height = height!;

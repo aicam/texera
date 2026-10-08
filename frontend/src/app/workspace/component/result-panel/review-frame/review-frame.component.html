@@ -1,0 +1,94 @@
+<!--
+ Licensed to the Apache Software Foundation (ASF) under one
+ or more contributor license agreements.  See the NOTICE file
+ distributed with this work for additional information
+ regarding copyright ownership.  The ASF licenses this file
+ to you under the Apache License, Version 2.0 (the
+ "License"); you may not use this file except in compliance
+ with the License.  You may obtain a copy of the License at
+
+   http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing,
+ software distributed under the License is distributed on an
+ "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ KIND, either express or implied.  See the License for the
+ specific language governing permissions and limitations
+ under the License.
+-->
+
+<div class="frame">
+  <div class="bar">
+    <nz-radio-group [(ngModel)]="mode">
+      <label
+        nz-radio-button
+        nzValue="review">
+        Review
+      </label>
+      <label
+        nz-radio-button
+        nzValue="records">
+        Records
+      </label>
+    </nz-radio-group>
+    <button
+      nz-button
+      nzType="primary"
+      [disabled]="!ownToken"
+      (click)="generateLink()">
+      Generate Link
+    </button>
+  </div>
+
+  <div
+    *ngIf="shared"
+    class="share">
+    <div class="share-top">
+      <nz-qrcode
+        [nzValue]="shared.url"
+        [nzSize]="132"
+        nzLevel="L"></nz-qrcode>
+      <div class="share-text">
+        Scan with a phone camera, or send the link. Anyone with it can label from a phone or computer, without a Texera
+        account, until {{ shared.expiresAt | date: "MMM d" }}. Labels are saved as you.
+      </div>
+    </div>
+    <div class="share-row">
+      <input
+        nz-input
+        readonly
+        [value]="shared.url"
+        (focus)="$any($event.target).select()" />
+      <button
+        nz-button
+        (click)="copy()">
+        {{ copied ? "Copied" : "Copy" }}
+      </button>
+      <a
+        nz-button
+        [href]="shared.url"
+        target="_blank"
+        rel="noopener">
+        Open
+      </a>
+    </div>
+  </div>
+
+  <div
+    *ngIf="error"
+    class="error">
+    {{ error }}
+  </div>
+
+  <texera-labeling-page
+    *ngIf="mode === 'review' && ownToken"
+    [token]="ownToken"
+    [annotator]="annotator"
+    [embedded]="true"></texera-labeling-page>
+
+  <texera-label-records
+    *ngIf="mode === 'records' && scans && labels && queue"
+    [scans]="scans"
+    [labels]="labels"
+    [queue]="queue"></texera-label-records>
+</div>

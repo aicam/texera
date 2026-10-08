@@ -90,7 +90,9 @@ class DatasetFileDocument:
 
         self.jwt_token = os.getenv("USER_JWT_TOKEN")
         self.presign_endpoint = os.getenv(
-            "FILE_SERVICE_GET_DATASET_PRESIGNED_URL_ENDPOINT"
+            "FILE_SERVICE_GET_MODEL_PRESIGNED_URL_ENDPOINT"
+            if self.resource_type == ResourceType.MODEL
+            else "FILE_SERVICE_GET_DATASET_PRESIGNED_URL_ENDPOINT"
         )
 
         if not self.jwt_token:
@@ -98,7 +100,9 @@ class DatasetFileDocument:
                 "JWT token is required but not set in environment variables."
             )
         if not self.presign_endpoint:
-            self.presign_endpoint = "http://localhost:9092/api/dataset/presign-download"
+            self.presign_endpoint = (
+                f"http://localhost:9092/api/{self.resource_type.value}/presign-download"
+            )
 
     def get_presigned_url(self) -> str:
         """

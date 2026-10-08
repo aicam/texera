@@ -1,0 +1,272 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+// Phone first: one column, a full-width image, and buttons large enough for a thumb.
+:host {
+  display: block;
+  min-height: 100%;
+  background: #f6f7f9;
+  color: #1c2530;
+  font-size: 16px;
+}
+
+.page {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+
+  &.embedded {
+    padding: 8px 0;
+    max-width: 440px;
+    margin: 0;
+  }
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+
+  h1 {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 0;
+  }
+
+  .progress {
+    margin: 0;
+    color: #5b6774;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.welcome {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #fff;
+  border-radius: 12px;
+  padding: 18px;
+
+  p {
+    margin: 0 0 6px;
+    line-height: 1.5;
+  }
+
+  label {
+    font-weight: 600;
+  }
+
+  input {
+    font-size: 18px;
+    padding: 12px;
+    border: 1px solid #c9d1d9;
+    border-radius: 10px;
+  }
+}
+
+.stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  max-width: 100%;
+
+  canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    border-radius: 12px;
+    background: #000;
+    touch-action: none;
+    cursor: crosshair;
+  }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    color: #e8edf2;
+    text-align: center;
+    padding: 24px;
+  }
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  font-size: 14px;
+  color: #3a4552;
+
+  span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .link {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: #2f6fd6;
+    min-height: 0;
+    padding: 4px;
+  }
+}
+
+.swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+
+  &.ai {
+    border: 3px solid rgb(34, 195, 214);
+  }
+
+  &.kept {
+    background: rgb(255, 159, 28);
+  }
+
+  &.added {
+    background: rgb(82, 196, 26);
+  }
+
+  &.removed {
+    background: rgb(245, 34, 45);
+  }
+}
+
+button {
+  min-height: 48px;
+  padding: 0 16px;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 10px;
+  border: 1px solid #c9d1d9;
+  background: #fff;
+  color: #1c2530;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+
+  &:focus-visible {
+    outline: 3px solid #2f6fd6;
+    outline-offset: 2px;
+  }
+}
+
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid #c9d1d9;
+  border-radius: 10px;
+  overflow: hidden;
+
+  button {
+    border: none;
+    border-radius: 0;
+    min-width: 52px;
+
+    &.on {
+      background: #1c2530;
+      color: #fff;
+    }
+  }
+}
+
+.dot {
+  display: inline-block;
+  border-radius: 50%;
+  background: currentColor;
+
+  &.s {
+    width: 6px;
+    height: 6px;
+  }
+
+  &.m {
+    width: 11px;
+    height: 11px;
+  }
+
+  &.l {
+    width: 17px;
+    height: 17px;
+  }
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 10px;
+
+  button {
+    min-height: 56px;
+    font-size: 18px;
+  }
+}
+
+.primary {
+  background: #1f7a4d;
+  border-color: #1f7a4d;
+  color: #fff;
+}
+
+.secondary {
+  background: #fff;
+}
+
+.status {
+  min-height: 22px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  .ok {
+    color: #1f7a4d;
+    font-weight: 600;
+  }
+
+  .error {
+    color: #c0362c;
+    font-weight: 600;
+  }
+
+  .meta {
+    color: #5b6774;
+    font-size: 13px;
+  }
+}

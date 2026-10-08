@@ -47,6 +47,7 @@ object OperatorGroupConstants {
   final val JAVA_GROUP = "Java"
   final val R_GROUP = "R"
   final val MACHINE_LEARNING_GENERAL_GROUP = "Machine Learning General"
+  final val ACTIVE_LEARNING_GROUP = "Active Learning"
   final val CONTROL_GROUP = "Control Block"
 
   /**
@@ -72,7 +73,8 @@ object OperatorGroupConstants {
         GroupInfo(SKLEARN_GROUP, List(GroupInfo(SKLEARN_TRAINING_GROUP))),
         GroupInfo(ADVANCED_SKLEARN_GROUP),
         GroupInfo(HUGGINGFACE_GROUP),
-        GroupInfo(MACHINE_LEARNING_GENERAL_GROUP)
+        GroupInfo(MACHINE_LEARNING_GENERAL_GROUP),
+        GroupInfo(ACTIVE_LEARNING_GROUP)
       )
     ),
     GroupInfo(UTILITY_GROUP),

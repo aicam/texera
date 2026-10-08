@@ -1,0 +1,117 @@
+<!--
+ Licensed to the Apache Software Foundation (ASF) under one
+ or more contributor license agreements.  See the NOTICE file
+ distributed with this work for additional information
+ regarding copyright ownership.  The ASF licenses this file
+ to you under the Apache License, Version 2.0 (the
+ "License"); you may not use this file except in compliance
+ with the License.  You may obtain a copy of the License at
+
+   http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing,
+ software distributed under the License is distributed on an
+ "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ KIND, either express or implied.  See the License for the
+ specific language governing permissions and limitations
+ under the License.
+-->
+
+<div class="records">
+  <div
+    *ngIf="selected"
+    class="viewer">
+    <div class="viewer-head">
+      <span class="case">{{ selected.case }}</span>
+      <button
+        nz-button
+        nzSize="small"
+        (click)="selected = undefined">
+        Close
+      </button>
+    </div>
+    <div class="panels">
+      <figure *ngFor="let view of views">
+        <canvas
+          #view
+          width="192"
+          height="192"></canvas>
+        <figcaption>{{ view.title }}</figcaption>
+      </figure>
+    </div>
+    <div class="summary">
+      <ng-container *ngIf="hasSuggestion; else noSuggestion">
+        Suggested by model {{ selected.suggested_by }}.
+        <span
+          *ngIf="(selected.versions_behind ?? 0) > 0"
+          class="stale">
+          {{ selected.versions_behind }} {{ selected.versions_behind === 1 ? "version" : "versions" }} behind {{
+          selected.newest_model_at_submit }}.
+        </span>
+        The person added <span class="added">{{ added }}</span> and removed
+        <span class="removed">{{ removed }}</span> pixels (overlap with the suggestion {{
+        selected.dice_suggested_vs_final | number: "1.2-2" }}).
+      </ng-container>
+      <ng-template #noSuggestion>Seed label, drawn without a model suggestion.</ng-template>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th></th>
+          <th>Case</th>
+          <th>Annotator</th>
+          <th>Round</th>
+          <th>Suggested by</th>
+          <th>Newest at submit</th>
+          <th class="num">Behind</th>
+          <th class="num">Uncertainty</th>
+          <th class="num">Overlap</th>
+          <th class="num">Pixels changed</th>
+          <th class="num">Seconds</th>
+          <th>Submitted</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr
+          *ngFor="let r of records"
+          [class.selected]="r.case === selected?.case">
+          <td>
+            <button
+              nz-button
+              nzSize="small"
+              (click)="open(r)">
+              Open
+            </button>
+          </td>
+          <td class="mono">{{ r.case }}</td>
+          <td>
+            <nz-tag>{{ r.annotator }}</nz-tag>
+          </td>
+          <td class="num">{{ r.round ?? "—" }}</td>
+          <td>{{ r.suggested_by?.split(" ")?.[0] ?? "—" }}</td>
+          <td>{{ r.newest_model_at_submit?.split(" ")?.[0] ?? "—" }}</td>
+          <td
+            class="num"
+            [class.stale]="(r.versions_behind ?? 0) > 0">
+            {{ r.versions_behind ?? "—" }}
+          </td>
+          <td class="num">{{ r.uncertainty !== undefined ? (r.uncertainty | number: "1.2-2") : "—" }}</td>
+          <td class="num">
+            {{ r.dice_suggested_vs_final !== undefined ? (r.dice_suggested_vs_final | number: "1.2-2") : "—" }}
+          </td>
+          <td class="num">{{ r.pixels_changed ?? "—" }}</td>
+          <td class="num">{{ r.seconds ?? "—" }}</td>
+          <td>{{ r.submitted_at ? (r.submitted_at | date: "HH:mm:ss") : "seed" }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div
+    *ngIf="error"
+    class="error">
+    {{ error }}
+  </div>
+</div>

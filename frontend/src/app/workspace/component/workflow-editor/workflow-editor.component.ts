@@ -18,7 +18,7 @@
  */
 
 import { AfterViewInit, ChangeDetectorRef, Component, ElementRef, Input, OnDestroy, OnInit } from "@angular/core";
-import { combineLatest, fromEvent, merge, Subject } from "rxjs";
+import { combineLatest, fromEvent, merge, startWith, Subject } from "rxjs";
 import { NzModalCommentBoxComponent } from "./comment-box-modal/nz-modal-comment-box.component";
 import { NzModalRef, NzModalService } from "ng-zorro-antd/modal";
 import { DragDropService } from "../../service/drag-drop/drag-drop.service";
@@ -56,6 +56,12 @@ import { NgIf } from "@angular/common";
 import { AgentInteractionComponent } from "../agent/agent-interaction/agent-interaction.component";
 import { HeatmapLegendComponent } from "../heatmap-legend/heatmap-legend.component";
 import { JupyterPanelService } from "../../service/jupyter-panel/jupyter-panel.service";
+import {
+  LabelingSession,
+  LabelingSessionService,
+  REVIEW_OPERATOR_TYPE,
+  TRAIN_OPERATOR_TYPE,
+} from "../../service/labeling/labeling-session.service";
 
 // jointjs interactive options for enabling and disabling interactivity
 // https://resources.jointjs.com/docs/jointjs/v3.2/joint.html#dia.Paper.prototype.options.interactive
@@ -162,6 +168,7 @@ export class WorkflowEditorComponent implements OnInit, AfterViewInit, OnDestroy
     private jointUIService: JointUIService,
     private workflowStatusService: WorkflowStatusService,
     private executeWorkflowService: ExecuteWorkflowService,
+    private labelingSessionService: LabelingSessionService,
     private nzModalService: NzModalService,
     private changeDetectorRef: ChangeDetectorRef,
     private undoRedoService: UndoRedoService,
@@ -247,6 +254,7 @@ export class WorkflowEditorComponent implements OnInit, AfterViewInit, OnDestroy
     this.handlePortHighlightEvent();
     this.registerPortDisplayNameChangeHandler();
     this.handleOperatorStatusUpdate();
+    this.handleLabelingSessions();
     this.handleHeatmapOverlay();
     this.handleHeatmapHover();
     this.handleRegionEvents();
@@ -451,6 +459,79 @@ export class WorkflowEditorComponent implements OnInit, AfterViewInit, OnDestroy
           this.validationWorkflowService.validateOperator(operator.operatorID)
         );
       });
+  }
+
+  /**
+   * Rings every Review & Correct operator whose labeling session is live: while
+   * its execution runs, and after that for as long as cases wait for review, even
+   * once the workflow is stopped or edited into an invalid state.
+   */
+  private handleLabelingSessions(): void {
+    const running = new Set([OperatorState.Initializing, OperatorState.Ready, OperatorState.Running]);
+    let latest: [Map<string, LabelingSession>, Record<string, OperatorState>] | undefined;
+    const draw = () => {
+      if (!latest) {
+        return;
+      }
+      const [sessions, states] = latest;
+      const graph = this.workflowActionService.getTexeraGraph();
+      const operators = graph.getAllOperators();
+      const loops: { key: string; from: string; to: string; text: string; live: boolean }[] = [];
+      operators
+        .filter(op => op.operatorType === REVIEW_OPERATOR_TYPE)
+        .forEach(op => {
+          const session = sessions.get(op.operatorID);
+          const isRunning = running.has(states[op.operatorID]);
+          this.jointUIService.setLabelingRing(
+            this.paper,
+            op.operatorID,
+            session || isRunning ? { open: 0, labeled: 0, ...session, running: isRunning } : undefined
+          );
+          // The labels this operator commits are what any trainer on the same labels
+          // dataset reads at its next epoch; draw that loop from the operator that
+          // follows Review & Correct, or from Review & Correct itself.
+          const next = graph.getAllLinks().filter(link => link.source.operatorID === op.operatorID);
+          const from = next.length === 1 ? next[0].target.operatorID : op.operatorID;
+          const labels = op.operatorProperties["labelsDataset"];
+          operators
+            .filter(
+              train =>
+                train.operatorType === TRAIN_OPERATOR_TYPE && train.operatorProperties["labelsDataset"] === labels
+            )
+            .forEach(train =>
+              loops.push({
+                key: `${op.operatorID}->${train.operatorID}`,
+                from,
+                to: train.operatorID,
+                text:
+                  `corrected labels \u2192 next epoch \u00b7 ${labels}` +
+                  (session ? ` \u00b7 ${session.labeled} labeled` : ""),
+                live: isRunning || (session?.open ?? 0) > 0,
+              })
+            );
+        });
+      this.jointUIService.setLabelingFeedbackLoops(this.paper, loops);
+    };
+    combineLatest([
+      this.labelingSessionService.sessions(),
+      this.workflowStatusService.getStateUpdateStream().pipe(startWith(this.workflowStatusService.getCurrentState())),
+    ])
+      .pipe(untilDestroyed(this))
+      .subscribe(update => {
+        latest = update;
+        draw();
+      });
+    // Follow operators as they move, and links and properties as they change, instead of waiting for the next poll.
+    const graph = this.workflowActionService.getTexeraGraph();
+    merge(
+      fromEvent(this.paper.model, "change:position"),
+      graph.getLinkAddStream(),
+      graph.getLinkDeleteStream(),
+      graph.getOperatorDeleteStream(),
+      graph.getOperatorPropertyChangeStream()
+    )
+      .pipe(auditTime(30), untilDestroyed(this))
+      .subscribe(() => draw());
   }
 
   /**

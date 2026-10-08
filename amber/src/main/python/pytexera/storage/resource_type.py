@@ -22,3 +22,4 @@ class ResourceType(str, Enum):
     """The leading segment of a logical file path, identifying the resource kind"""
 
     DATASET = "dataset"
+    MODEL = "model"

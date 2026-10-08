@@ -65,6 +65,8 @@ object GuiConfig {
     conf.getBoolean("gui.workflow-workspace.production-shared-editing-server")
   val guiWorkflowWorkspacePythonLanguageServerPort: String =
     conf.getString("gui.workflow-workspace.python-language-server-port")
+  val guiWorkflowWorkspaceLabelingLinkBaseUrl: String =
+    conf.getString("gui.workflow-workspace.labeling-link-base-url")
   val guiWorkflowWorkspaceOperatorConsoleMessageBufferSize: Int =
     conf.getInt("gui.workflow-workspace.operator-console-message-buffer-size")
   val guiWorkflowWorkspaceWorkflowEmailNotificationEnabled: Boolean =

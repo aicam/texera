@@ -94,11 +94,7 @@ describe("ResultPanelComponent", () => {
     // down so state never leaks into the next test.
     vi.restoreAllMocks();
     fixture.destroy();
-    // fixture.destroy() runs ngOnDestroy, which persists the panel dimensions/style
-    // into localStorage; those keys are read back in the constructor/ngOnInit and would
-    // otherwise leak across specs. Remove only the keys this component writes.
-    localStorage.removeItem("result-panel-width");
-    localStorage.removeItem("result-panel-height");
+    // A spec may plant the legacy key; drop it so it never leaks into the next one.
     localStorage.removeItem("result-panel-style");
   });
 
@@ -180,6 +176,54 @@ describe("ResultPanelComponent", () => {
 
       expect(component.height).toBe(32.5);
       expect(component.width).toBe(0);
+    });
+
+    it("reopening a docked panel keeps it flush with the canvas bottom, not hanging below it", () => {
+      component.closePanel();
+      expect(component.dragPosition).toEqual(component.dockedPosition(32.5));
+
+      component.openPanel();
+
+      expect(component.dragPosition).toEqual(component.dockedPosition(DEFAULT_HEIGHT));
+      expect(component.isPanelDocked()).toBe(true);
+    });
+
+    it("pulls a dragged panel back inside the canvas when it opens", () => {
+      vi.spyOn(document, "querySelector").mockReturnValue({
+        getBoundingClientRect: () => ({ width: 1000, height: 700 }),
+      } as unknown as Element);
+      component.docked = false;
+      component.dragPosition = { x: -400, y: 5000 };
+
+      component.openPanel();
+
+      // 300 is the container's resting offset above the canvas bottom.
+      expect(component.dragPosition).toEqual({ x: 0, y: 300 - DEFAULT_HEIGHT });
+      component.dragPosition = { x: 5000, y: -5000 };
+      component.onWindowResize();
+      expect(component.dragPosition).toEqual({ x: 1000 - DEFAULT_WIDTH, y: 300 - 700 });
+    });
+
+    it("starts docked and drops the old cssText that grew on every visit", () => {
+      localStorage.setItem("result-panel-style", "transform: translate3d(0px, 900px, 0px)");
+      component.docked = false;
+      component.dragPosition = { x: 4000, y: 3000 };
+
+      component.ngOnInit();
+
+      expect(localStorage.getItem("result-panel-style")).toBeNull();
+      expect(component.dragPosition).toEqual(component.dockedPosition(component.height));
+    });
+
+    it("closing a dragged panel docks it, so its open button is back at the bottom-left", () => {
+      component.openPanel();
+      component.docked = false;
+      component.dragPosition = { x: 120, y: -50 };
+
+      component.closePanel();
+
+      expect(component.docked).toBe(true);
+      expect(component.dragPosition).toEqual(component.dockedPosition(32.5));
     });
 
     it("isPanelDocked is true only when the drag position matches the return position", () => {
@@ -591,12 +635,13 @@ describe("ResultPanelComponent", () => {
 
     it("re-docks and re-opens the panel when the panel service requests a reset", () => {
       const panelService = TestBed.inject(PanelService);
-      component.returnPosition = { x: 11, y: 22 };
+      component.docked = false;
       component.dragPosition = { x: 99, y: 88 };
 
       panelService.resetPanels();
 
-      expect(component.dragPosition).toEqual({ x: 11, y: 22 });
+      expect(component.docked).toBe(true);
+      expect(component.dragPosition).toEqual(component.dockedPosition(DEFAULT_HEIGHT));
       expect(component.width).toBe(DEFAULT_WIDTH);
       expect(component.height).toBe(DEFAULT_HEIGHT);
     });
@@ -657,29 +702,12 @@ describe("ResultPanelComponent", () => {
   });
 
   describe("persistence on unload", () => {
-    it("writes the current panel dimensions to localStorage on window beforeunload", () => {
+    it("saves no layout, so a stale one can never open the panel off-screen", () => {
       const setItemSpy = vi.spyOn(Storage.prototype, "setItem");
-      component.width = 640;
-      component.height = 480;
 
       window.dispatchEvent(new Event("beforeunload"));
 
-      expect(setItemSpy).toHaveBeenCalledWith("result-panel-width", "640");
-      expect(setItemSpy).toHaveBeenCalledWith("result-panel-height", "480");
-    });
-
-    it("persists dimensions but skips the style entry when the result container is gone", () => {
-      // If the container element has already been torn down, only the width/height are saved.
-      vi.spyOn(document, "getElementById").mockReturnValue(null);
-      const setItemSpy = vi.spyOn(Storage.prototype, "setItem");
-      component.width = 640;
-      component.height = 480;
-
-      component.ngOnDestroy();
-
-      expect(setItemSpy).toHaveBeenCalledWith("result-panel-width", "640");
-      expect(setItemSpy).toHaveBeenCalledWith("result-panel-height", "480");
-      expect(setItemSpy).not.toHaveBeenCalledWith("result-panel-style", expect.anything());
+      expect(setItemSpy).not.toHaveBeenCalledWith(expect.stringMatching(/^result-panel-/), expect.anything());
     });
   });
 

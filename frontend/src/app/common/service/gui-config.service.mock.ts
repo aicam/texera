@@ -45,6 +45,7 @@ export class MockGuiConfigService {
     formViewEnabled: false,
     productionSharedEditingServer: false,
     pythonLanguageServerPort: "3000",
+    labelingLinkBaseUrl: "",
     defaultDataTransferBatchSize: 100,
     defaultExecutionMode: ExecutionMode.PIPELINED,
     workflowEmailNotificationEnabled: false,

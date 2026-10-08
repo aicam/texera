@@ -30,6 +30,11 @@
     "secure": false,
     "changeOrigin": true
   },
+  "/api/labeling": {
+    "target": "http://localhost:9092",
+    "secure": false,
+    "changeOrigin": true
+  },
   "/api/dataset": {
     "target": "http://localhost:9092",
     "secure": false,

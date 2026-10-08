@@ -1,0 +1,201 @@
+<!--
+ Licensed to the Apache Software Foundation (ASF) under one
+ or more contributor license agreements.  See the NOTICE file
+ distributed with this work for additional information
+ regarding copyright ownership.  The ASF licenses this file
+ to you under the Apache License, Version 2.0 (the
+ "License"); you may not use this file except in compliance
+ with the License.  You may obtain a copy of the License at
+
+   http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing,
+ software distributed under the License is distributed on an
+ "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ KIND, either express or implied.  See the License for the
+ specific language governing permissions and limitations
+ under the License.
+-->
+
+<div
+  class="page"
+  [class.embedded]="embedded">
+  <header *ngIf="!embedded">
+    <h1>Tumor outlining</h1>
+    <p
+      *ngIf="name"
+      class="progress">
+      {{ labeled }} done · {{ remaining }} waiting
+    </p>
+  </header>
+
+  <form
+    *ngIf="!name"
+    class="welcome"
+    (ngSubmit)="start()">
+    <p>
+      You will see brain scans one at a time. The AI has drawn its guess of the tumor in blue. Paint where the tumor is,
+      erase where it is not, then tap <b>Save &amp; next</b>.
+    </p>
+    <label for="annotator-name">Your name</label>
+    <input
+      id="annotator-name"
+      name="annotator"
+      autocomplete="name"
+      [(ngModel)]="nameDraft"
+      placeholder="Dr. Jane Smith" />
+    <button
+      type="submit"
+      class="primary"
+      [disabled]="!nameDraft.trim()">
+      Start
+    </button>
+  </form>
+
+  <ng-container *ngIf="name">
+    <div class="stage">
+      <canvas
+        #canvas
+        width="512"
+        height="512"
+        (pointerdown)="onPointerDown($event)"
+        (pointermove)="onPointerMove($event)"
+        (pointerup)="onPointerUp()"
+        (pointercancel)="onPointerUp()"></canvas>
+      <div
+        *ngIf="!current"
+        class="overlay">
+        <ng-container *ngIf="loading; else caughtUp">Loading…</ng-container>
+        <ng-template #caughtUp>
+          <b>All caught up.</b>
+          <span>New scans appear here on their own.</span>
+        </ng-template>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span><i class="swatch ai"></i>AI's guess</span>
+      <span><i class="swatch kept"></i>Kept</span>
+      <span><i class="swatch added"></i>You added</span>
+      <span><i class="swatch removed"></i>You removed</span>
+      <button
+        type="button"
+        class="link"
+        (click)="toggleAi()">
+        {{ showAi ? "Hide" : "Show" }} AI's guess
+      </button>
+    </div>
+
+    <div class="tools">
+      <div
+        class="segmented"
+        role="radiogroup"
+        aria-label="Tool">
+        <button
+          type="button"
+          role="radio"
+          [attr.aria-checked]="tool === 'paint'"
+          [class.on]="tool === 'paint'"
+          (click)="tool = 'paint'">
+          Paint
+        </button>
+        <button
+          type="button"
+          role="radio"
+          [attr.aria-checked]="tool === 'erase'"
+          [class.on]="tool === 'erase'"
+          (click)="tool = 'erase'">
+          Erase
+        </button>
+      </div>
+      <div
+        class="segmented"
+        role="radiogroup"
+        aria-label="Brush size">
+        <button
+          type="button"
+          role="radio"
+          [attr.aria-checked]="brush === 'small'"
+          [class.on]="brush === 'small'"
+          (click)="brush = 'small'"
+          aria-label="Small brush">
+          <i class="dot s"></i>
+        </button>
+        <button
+          type="button"
+          role="radio"
+          [attr.aria-checked]="brush === 'medium'"
+          [class.on]="brush === 'medium'"
+          (click)="brush = 'medium'"
+          aria-label="Medium brush">
+          <i class="dot m"></i>
+        </button>
+        <button
+          type="button"
+          role="radio"
+          [attr.aria-checked]="brush === 'large'"
+          [class.on]="brush === 'large'"
+          (click)="brush = 'large'"
+          aria-label="Large brush">
+          <i class="dot l"></i>
+        </button>
+      </div>
+      <button
+        type="button"
+        [disabled]="!canUndo"
+        (click)="undo()">
+        Undo
+      </button>
+      <button
+        type="button"
+        [disabled]="!current"
+        (click)="resetToAi()">
+        Start over
+      </button>
+      <button
+        type="button"
+        [disabled]="!current"
+        (click)="clear()">
+        No tumor
+      </button>
+    </div>
+
+    <div class="actions">
+      <button
+        type="button"
+        class="secondary"
+        [disabled]="!current || saving"
+        (click)="skip()">
+        Skip
+      </button>
+      <button
+        type="button"
+        class="primary"
+        [disabled]="!current || saving"
+        (click)="save()">
+        {{ saving ? "Saving…" : "Save & next" }}
+      </button>
+    </div>
+
+    <p
+      class="status"
+      role="status">
+      <span
+        *ngIf="message"
+        class="ok"
+        >{{ message }}</span
+      >
+      <span
+        *ngIf="error"
+        class="error"
+        >{{ error }}</span
+      >
+      <span
+        *ngIf="embedded && current"
+        class="meta"
+        >{{ current.case }} · suggested by {{ current.suggested_by.split(" ")[0] }} · {{ labeled }} done · {{ remaining
+        }} waiting</span
+      >
+    </p>
+  </ng-container>
+</div>

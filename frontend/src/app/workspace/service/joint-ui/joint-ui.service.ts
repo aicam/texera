@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import { escape } from "lodash";
 import { Injectable } from "@angular/core";
 import { OperatorMetadataService } from "../operator-metadata/operator-metadata.service";
 import { OperatorSchema } from "../../types/operator-schema.interface";
@@ -453,6 +454,172 @@ export class JointUIService {
           }
         : {}),
     });
+  }
+
+  /**
+   * Draws the live-session ring around a Review & Correct operator: a soft halo,
+   * a dashed track, and a comet of dots, largest first, orbiting the box. It is
+   * drawn into the element's own SVG group, behind the box and deaf to the
+   * pointer, so the operator stays fully usable. Without a session it is removed;
+   * a session with nothing left to review shows a still "all reviewed" badge.
+   */
+  public setLabelingRing(
+    jointPaper: joint.dia.Paper,
+    operatorID: string,
+    session: { open: number; labeled: number; running: boolean } | undefined
+  ): void {
+    const view = jointPaper.findViewByModel(operatorID);
+    if (!view) {
+      return;
+    }
+    let ring = view.el.querySelector<SVGGElement>(":scope > g.labeling-ring");
+    if (!session) {
+      ring?.remove();
+      return;
+    }
+    const live = session.running || session.open > 0;
+    if (!ring || ring.dataset.live !== String(live)) {
+      ring?.remove();
+      ring = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      ring.setAttribute("class", "labeling-ring");
+      ring.setAttribute("pointer-events", "none");
+      ring.dataset.live = String(live);
+      ring.innerHTML = JointUIService.labelingRingMarkup(live);
+      view.el.insertBefore(ring, view.el.firstChild);
+    }
+    const text = !live
+      ? `\u2713 ${session.labeled} reviewed`
+      : session.open > 0
+        ? `LIVE \u00b7 ${session.open} to review`
+        : "LIVE \u00b7 waiting for cases";
+    const label = ring.querySelector("text.labeling-ring-text")!;
+    if (label.textContent !== text) {
+      label.textContent = text;
+      const width = text.length * 6.4 + 22;
+      const pill = ring.querySelector("rect.labeling-ring-pill")!;
+      pill.setAttribute("x", String(JointUIService.DEFAULT_OPERATOR_WIDTH / 2 - width / 2));
+      pill.setAttribute("width", String(width));
+    }
+  }
+
+  /**
+   * Draws the loop a labeling session closes through storage: labels committed
+   * downstream of Review & Correct are what the trainer reads at its next
+   * epoch. It is not a workflow link, which would make the graph cyclic; it is
+   * drawn in the paper's back layer, from `from` around below the workflow
+   * into `to`. Loops whose keys are not in `keep` are removed.
+   */
+  public setLabelingFeedbackLoops(
+    jointPaper: joint.dia.Paper,
+    loops: { key: string; from: string; to: string; text: string; live: boolean }[]
+  ): void {
+    const layer = jointPaper.getLayerNode("back");
+    const keep = new Set(loops.map(loop => loop.key));
+    layer.querySelectorAll<SVGGElement>(":scope > g.labeling-feedback").forEach(g => {
+      if (!keep.has(g.dataset.key!)) {
+        g.remove();
+      }
+    });
+    for (const loop of loops) {
+      const from = jointPaper.model.getCell(loop.from) as joint.dia.Element | undefined;
+      const to = jointPaper.model.getCell(loop.to) as joint.dia.Element | undefined;
+      if (!from || !to) {
+        continue;
+      }
+      const markup = JointUIService.feedbackLoopMarkup(from.getBBox(), to.getBBox(), loop.text, loop.live);
+      let group = layer.querySelector<SVGGElement>(`:scope > g.labeling-feedback[data-key="${loop.key}"]`);
+      if (!group) {
+        group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        group.setAttribute("class", "labeling-feedback");
+        group.setAttribute("pointer-events", "none");
+        group.dataset.key = loop.key;
+        layer.appendChild(group);
+      }
+      // Only rewrite on change, so the animations keep running between polls.
+      if (group.dataset.markup !== markup) {
+        group.dataset.markup = markup;
+        group.innerHTML = markup;
+      }
+    }
+  }
+
+  private static feedbackLoopMarkup(from: joint.g.Rect, to: joint.g.Rect, text: string, live: boolean): string {
+    // Start under the source's name label, run below both operators, end under the target's name.
+    const nameGap = 26;
+    const [sx, sy] = [from.x + from.width / 2, from.y + from.height + nameGap];
+    const [tx, ty] = [to.x + to.width / 2, to.y + to.height + nameGap];
+    const low = Math.max(sy, ty) + 56;
+    const r = Math.min(16, Math.abs(sx - tx) / 2);
+    const dir = tx < sx ? -1 : 1;
+    const path =
+      `M ${sx} ${sy} V ${low - r} Q ${sx} ${low} ${sx + dir * r} ${low} ` +
+      `H ${tx - dir * r} Q ${tx} ${low} ${tx} ${low - r} V ${ty + 4}`;
+    const color = "#722ed1";
+    const width = text.length * 6.2 + 24;
+    const mid = (sx + tx) / 2;
+    const dots = live
+      ? [0, 1, 2]
+          .map(
+            i =>
+              `<circle r="3.5" fill="${color}"><animateMotion dur="3.6s" begin="${-i * 1.2}s" ` +
+              `repeatCount="indefinite" path="${path}"/></circle>`
+          )
+          .join("")
+      : "";
+    return (
+      `<path d="${path}" fill="none" stroke="${color}" stroke-width="6" opacity="0.08"/>` +
+      `<path d="${path}" fill="none" stroke="${color}" stroke-width="2" stroke-dasharray="7 6" opacity="0.85">` +
+      (live ? '<animate attributeName="stroke-dashoffset" from="26" to="0" dur="1s" repeatCount="indefinite"/>' : "") +
+      "</path>" +
+      `<path d="M ${tx - 6} ${ty + 13} L ${tx} ${ty + 3} L ${tx + 6} ${ty + 13}" fill="none" stroke="${color}" ` +
+      'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>' +
+      dots +
+      `<rect x="${mid - width / 2}" y="${low - 11}" width="${width}" height="22" rx="11" fill="#fff" ` +
+      `stroke="${color}" stroke-width="1.2"/>` +
+      `<text x="${mid}" y="${low + 4}" text-anchor="middle" fill="${color}" font-family="sans-serif" ` +
+      `font-size="11" font-weight="600">${escape(text)}</text>`
+    );
+  }
+
+  private static labelingRingMarkup(live: boolean): string {
+    const w = JointUIService.DEFAULT_OPERATOR_WIDTH;
+    const h = JointUIService.DEFAULT_OPERATOR_HEIGHT;
+    const pad = 12;
+    const r = 18;
+    const [x0, y0, x1, y1] = [-pad, -pad, w + pad, h + pad];
+    const track =
+      `M ${x0 + r} ${y0} H ${x1 - r} A ${r} ${r} 0 0 1 ${x1} ${y0 + r} V ${y1 - r} ` +
+      `A ${r} ${r} 0 0 1 ${x1 - r} ${y1} H ${x0 + r} A ${r} ${r} 0 0 1 ${x0} ${y1 - r} ` +
+      `V ${y0 + r} A ${r} ${r} 0 0 1 ${x0 + r} ${y0} Z`;
+    const color = live ? "#13c2c2" : "#52c41a";
+    const pill =
+      `<rect class="labeling-ring-pill" y="${y0 - 33}" height="18" rx="9" fill="${live ? "#08979c" : "#389e0d"}"/>` +
+      `<text class="labeling-ring-text" x="${w / 2}" y="${y0 - 20.5}" text-anchor="middle" ` +
+      `fill="#fff" font-family="sans-serif" font-size="10.5" font-weight="600"></text>`;
+    if (!live) {
+      return `<path d="${track}" fill="none" stroke="${color}" stroke-width="1.5" opacity="0.6"/>${pill}`;
+    }
+    const period = 3.2;
+    const dots = 12;
+    const comet = Array.from({ length: dots }, (_, i) => {
+      // Dot 0 leads: the largest and furthest along the track, each next one smaller and behind.
+      const radius = 4.6 - (i * 3.8) / (dots - 1);
+      const opacity = 1 - (i * 0.75) / (dots - 1);
+      const begin = -((dots - i) * 0.07);
+      return (
+        `<circle r="${radius.toFixed(2)}" fill="${color}" opacity="${opacity.toFixed(2)}">` +
+        `<animateMotion dur="${period}s" begin="${begin.toFixed(2)}s" repeatCount="indefinite" path="${track}"/>` +
+        "</circle>"
+      );
+    }).join("");
+    return (
+      `<path d="${track}" fill="none" stroke="${color}" stroke-width="7" opacity="0.12">` +
+      '<animate attributeName="opacity" values="0.06;0.22;0.06" dur="2.4s" repeatCount="indefinite"/></path>' +
+      `<path d="${track}" fill="none" stroke="${color}" stroke-width="1.5" stroke-dasharray="5 6" opacity="0.8">` +
+      '<animate attributeName="stroke-dashoffset" from="0" to="-22" dur="1.2s" repeatCount="indefinite"/></path>' +
+      comet +
+      pill
+    );
   }
 
   public changeOperatorState(jointPaper: joint.dia.Paper, operatorID: string, operatorState: OperatorState): void {
