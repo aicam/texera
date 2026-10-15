@@ -19,7 +19,12 @@
 
 package org.apache.texera.amber.engine.architecture.coordinator
 
-import org.apache.texera.amber.core.workflow.{PortIdentity, WorkflowContext}
+import org.apache.texera.amber.core.workflow.{
+  GlobalPortIdentity,
+  PortIdentity,
+  WorkflowContext,
+  WorkflowSettings
+}
 import org.apache.texera.amber.engine.common.virtualidentity.util.COORDINATOR
 import org.apache.texera.amber.engine.e2e.TestUtils.buildWorkflow
 import org.apache.texera.amber.operator.TestOperators
@@ -99,5 +104,84 @@ class WorkflowSchedulerSpec extends AnyFlatSpec {
       .toSet
 
     assert(pulledRegions == expectedRegions)
+  }
+
+  // csv -> keyword, and the same plan with a second keyword search attached to the csv scan.
+  private def runningAndEditedPlans(liveEditing: Boolean) = {
+    val csvOpDesc = TestOperators.headerlessSmallCsvScanOpDesc()
+    val keywordOpDesc = TestOperators.keywordSearchOpDesc("column-1", "Asia")
+    val addedOpDesc = TestOperators.keywordSearchOpDesc("column-1", "Europe")
+    val toKeyword = LogicalLink(
+      csvOpDesc.operatorIdentifier,
+      PortIdentity(0),
+      keywordOpDesc.operatorIdentifier,
+      PortIdentity(0)
+    )
+    val toAdded = LogicalLink(
+      csvOpDesc.operatorIdentifier,
+      PortIdentity(0),
+      addedOpDesc.operatorIdentifier,
+      PortIdentity(0)
+    )
+    val context = new WorkflowContext()
+    context.workflowSettings = WorkflowSettings(liveEditing = liveEditing)
+    val running = buildWorkflow(List(csvOpDesc, keywordOpDesc), List(toKeyword), context)
+    val editedContext = new WorkflowContext()
+    editedContext.workflowSettings = WorkflowSettings(liveEditing = liveEditing)
+    val edited = buildWorkflow(
+      List(csvOpDesc, keywordOpDesc, addedOpDesc),
+      List(toKeyword, toAdded),
+      editedContext
+    )
+    (running, edited, addedOpDesc)
+  }
+
+  "WorkflowScheduler.extend" should "schedule only the added operator, reading the running operator's kept output" in {
+    val (running, edited, added) = runningAndEditedPlans(liveEditing = true)
+    val scheduler = new WorkflowScheduler(running.context, COORDINATOR)
+    scheduler.updateSchedule(running.physicalPlan)
+    val runningRegions = scheduler.getSchedule.getRegions
+
+    val (addedSchedule, readFrom) = scheduler.extend(
+      edited.physicalPlan,
+      edited.context.workflowSettings.outputPortsNeedingStorage,
+      runningRegions
+    )
+
+    val addedRegions = addedSchedule.getRegions
+    assert(addedRegions.flatMap(_.getOperators.map(_.id.logicalOpId)).toSet == Set(added.operatorIdentifier))
+    assert(addedRegions.map(_.id).toSet.intersect(runningRegions.map(_.id).toSet).isEmpty)
+    val csvPort = running.physicalPlan.operators
+      .find(_.isSourceOperator)
+      .map(op => GlobalPortIdentity(op.id, PortIdentity(0)))
+      .get
+    assert(readFrom.values.toSet == Set(csvPort))
+    val inputUris = addedRegions.flatMap(_.resourceConfig.get.portConfigs.collect {
+      case (port, config) if port.input => config.storageURIs
+    }).flatten
+    assert(inputUris == readFrom.keys.toList)
+    assert(scheduler.physicalPlan.operators.size == edited.physicalPlan.operators.size)
+  }
+
+  it should "refuse to attach to an output that is not kept" in {
+    val (running, edited, _) = runningAndEditedPlans(liveEditing = false)
+    val scheduler = new WorkflowScheduler(running.context, COORDINATOR)
+    scheduler.updateSchedule(running.physicalPlan)
+
+    val error = intercept[IllegalArgumentException] {
+      scheduler.extend(edited.physicalPlan, Set.empty, scheduler.getSchedule.getRegions)
+    }
+    assert(error.getMessage.contains("not kept"))
+  }
+
+  it should "refuse an edit that removes a running operator" in {
+    val (running, edited, _) = runningAndEditedPlans(liveEditing = true)
+    val scheduler = new WorkflowScheduler(edited.context, COORDINATOR)
+    scheduler.updateSchedule(edited.physicalPlan)
+
+    val error = intercept[IllegalArgumentException] {
+      scheduler.extend(running.physicalPlan, Set.empty, scheduler.getSchedule.getRegions)
+    }
+    assert(error.getMessage.contains("cannot be removed"))
   }
 }

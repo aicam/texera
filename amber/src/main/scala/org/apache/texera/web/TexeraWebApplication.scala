@@ -47,6 +47,7 @@ import org.apache.texera.web.resource.dashboard.user.UserResource
 import org.apache.texera.web.resource.dashboard.user.warehouse.WarehouseResource
 import org.apache.texera.web.resource.dashboard.user.quota.UserQuotaResource
 import org.apache.texera.web.resource.dashboard.user.workflow.{
+  SharedOutputResource,
   WorkflowAccessResource,
   WorkflowExecutionsResource,
   WorkflowResource,
@@ -149,6 +150,7 @@ class TexeraWebApplication
     environment.jersey.register(classOf[FeedbackResource])
     environment.jersey.register(classOf[AdminUserResource])
     environment.jersey.register(classOf[WorkflowAccessResource])
+    environment.jersey.register(classOf[SharedOutputResource])
     environment.jersey.register(classOf[WorkflowResource])
     environment.jersey.register(classOf[HubResource])
     environment.jersey.register(classOf[UserResource])

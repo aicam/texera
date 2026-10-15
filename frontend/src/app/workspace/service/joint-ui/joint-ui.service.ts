@@ -695,6 +695,13 @@ export class JointUIService {
     model.attr("rect.body/stroke", color);
   }
 
+  /**
+   * Dashes the outline of an operator that is on the canvas but not yet part of the running workflow.
+   */
+  public setOperatorPendingInRun(jointPaper: joint.dia.Paper, operatorID: string, pending: boolean): void {
+    jointPaper.getModelById(operatorID)?.attr("rect.body/stroke-dasharray", pending ? "8 5" : null);
+  }
+
   public changeOperatorDisableStatus(jointPaper: joint.dia.Paper, operator: OperatorPredicate): void {
     jointPaper.getModelById(operator.operatorID).attr("rect.body/fill", JointUIService.getOperatorFillColor(operator));
   }

@@ -61,10 +61,20 @@ object CostBasedScheduleGenerator {
       requestedMode
 }
 
+/**
+  * @param externalInputs reader URIs for input ports fed from outside the plan: when operators
+  *                       are added to a running execution, the plan holds only the new operators,
+  *                       and an input attached to a running operator reads that operator's
+  *                       materialized output port.
+  * @param firstRegionId  the id of the first region, so regions added to a running execution do
+  *                       not take the ids of the regions already there.
+  */
 class CostBasedScheduleGenerator(
     workflowContext: WorkflowContext,
     initialPhysicalPlan: PhysicalPlan,
-    val actorId: ActorVirtualIdentity
+    val actorId: ActorVirtualIdentity,
+    externalInputs: Map[GlobalPortIdentity, List[URI]] = Map.empty,
+    firstRegionId: Long = 0
 ) extends ScheduleGenerator(
       workflowContext,
       initialPhysicalPlan
@@ -213,7 +223,7 @@ class CostBasedScheduleGenerator(
 
         // Build the Region skeleton (no input‑port URIs yet)
         Region(
-          id = RegionIdentity(idx),
+          id = RegionIdentity(firstRegionId + idx),
           physicalOps = physicalOps,
           physicalLinks = links,
           ports = ports,
@@ -266,7 +276,10 @@ class CostBasedScheduleGenerator(
           .map {
             case (inputPortId, uris) =>
               inputPortId -> IntermediateInputPortConfig(uris)
-          }
+          } ++ externalInputs.collect {
+          case (inputPortId, uris) if existingRegion.getOperators.exists(_.id == inputPortId.opId) =>
+            inputPortId -> IntermediateInputPortConfig(uris)
+        }
 
       val newResourceConfig: Option[ResourceConfig] = existingRegion.resourceConfig match {
         case Some(existingConfig) =>

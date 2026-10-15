@@ -60,6 +60,8 @@ import { mockScanPredicate } from "../workflow-graph/model/mock-workflow-data";
 import { PAGINATION_INFO_STORAGE_KEY, ResultPaginationInfo } from "../../types/result-table.interface";
 import { sessionGetObject, sessionSetObject } from "../../../common/util/storage";
 
+const EMPTY_PLAN: LogicalPlan = { operators: [], links: [] };
+
 describe("ExecuteWorkflowService", () => {
   let service: ExecuteWorkflowService;
   let mockDocument: Document;
@@ -291,7 +293,7 @@ describe("ExecuteWorkflowService", () => {
     const emailNotificationEnabled = true;
     const targetOperatorId = "test-operator-id";
 
-    const logicalPlanSpy = vi.spyOn(ExecuteWorkflowService, "getLogicalPlanRequest").mockReturnValue({} as LogicalPlan);
+    const logicalPlanSpy = vi.spyOn(ExecuteWorkflowService, "getLogicalPlanRequest").mockReturnValue(EMPTY_PLAN);
     const settingsSpy = vi
       .spyOn(service["workflowActionService"], "getWorkflowSettings")
       .mockReturnValue({} as WorkflowSettings);
@@ -490,7 +492,7 @@ describe("ExecuteWorkflowService", () => {
   });
 
   it("executeWorkflowWithReplay builds a replay request and forwards the replay info", () => {
-    const logicalPlanSpy = vi.spyOn(ExecuteWorkflowService, "getLogicalPlanRequest").mockReturnValue({} as LogicalPlan);
+    const logicalPlanSpy = vi.spyOn(ExecuteWorkflowService, "getLogicalPlanRequest").mockReturnValue(EMPTY_PLAN);
     const resetExecutionStateSpy = vi.spyOn(service, "resetExecutionState");
     const resetStatusSpy = vi.spyOn(service["workflowStatusService"], "resetStatus");
     const sendExecutionRequestSpy = vi.spyOn(service, "sendExecutionRequest").mockImplementation(() => {});
@@ -519,7 +521,7 @@ describe("ExecuteWorkflowService", () => {
     const wsSendSpy = vi.spyOn(service["workflowWebsocketService"], "send");
     const settings = service["workflowActionService"].getWorkflowSettings();
 
-    service.sendExecutionRequest("exec", {} as LogicalPlan, settings, true, undefined);
+    service.sendExecutionRequest("exec", EMPTY_PLAN, settings, true, undefined);
     tick(FORM_DEBOUNCE_TIME_MS + 1);
     flush();
 
@@ -675,13 +677,13 @@ describe("ExecuteWorkflowService", () => {
     const settings = service["workflowActionService"].getWorkflowSettings();
 
     warehouseService.selectWarehouse(7);
-    service.sendExecutionRequest("exec", {} as LogicalPlan, settings, false, undefined);
+    service.sendExecutionRequest("exec", EMPTY_PLAN, settings, false, undefined);
     tick(FORM_DEBOUNCE_TIME_MS + 1);
     flush();
     expect(wsSendSpy).toHaveBeenLastCalledWith("WorkflowExecuteRequest", expect.objectContaining({ warehouseId: 7 }));
 
     warehouseService.selectWarehouse(undefined);
-    service.sendExecutionRequest("exec", {} as LogicalPlan, settings, false, undefined);
+    service.sendExecutionRequest("exec", EMPTY_PLAN, settings, false, undefined);
     tick(FORM_DEBOUNCE_TIME_MS + 1);
     flush();
     expect(wsSendSpy).toHaveBeenLastCalledWith(
@@ -694,7 +696,7 @@ describe("ExecuteWorkflowService", () => {
     sessionSetObject(PAGINATION_INFO_STORAGE_KEY, { newWorkflowExecuted: false });
     const settings = service["workflowActionService"].getWorkflowSettings();
 
-    service.sendExecutionRequest("exec", {} as LogicalPlan, settings, false, undefined);
+    service.sendExecutionRequest("exec", EMPTY_PLAN, settings, false, undefined);
     tick(FORM_DEBOUNCE_TIME_MS + 1);
     flush();
 
@@ -776,6 +778,54 @@ describe("ExecuteWorkflowService", () => {
     service.modifyOperatorLogic("1");
     expect(wsSendSpy).toHaveBeenCalledWith("ModifyLogicRequest", {
       operator: { operatorID: "1", operatorType: "ScanSource" },
+    });
+  });
+
+  describe("live editing", () => {
+    const runningPlan: LogicalPlan = {
+      operators: [{ operatorID: "running", operatorType: "Dummy" }],
+      links: [],
+    };
+
+    function startLiveRun(liveEditing: boolean): void {
+      const settings = { ...service["workflowActionService"].getWorkflowSettings(), liveEditing };
+      service.sendExecutionRequest("exec", runningPlan, settings, false, undefined);
+      service["updateExecutionState"]({ state: ExecutionState.Running });
+    }
+
+    it("keeps the workflow editable while a live-editing run goes", () => {
+      const enableSpy = vi.spyOn(service["workflowActionService"], "enableWorkflowModification");
+      startLiveRun(true);
+      expect(enableSpy).toHaveBeenCalled();
+      expect(service.isLiveEditingRun()).toBe(true);
+      expect(service.isInRun("running")).toBe(true);
+    });
+
+    it("locks the workflow while a run without live editing goes", () => {
+      const disableSpy = vi.spyOn(service["workflowActionService"], "disableWorkflowModification");
+      startLiveRun(false);
+      expect(disableSpy).toHaveBeenCalled();
+      expect(service.isLiveEditingRun()).toBe(false);
+      expect(() => service.addToRunningWorkflow()).toThrow();
+    });
+
+    it("sends the edited plan and counts the added operators as part of the run", () => {
+      startLiveRun(true);
+      vi.spyOn(service["notificationService"], "success").mockImplementation(() => undefined as any);
+      const wsSendSpy = vi.spyOn(service["workflowWebsocketService"], "send");
+      service.addToRunningWorkflow();
+      expect(wsSendSpy).toHaveBeenCalledWith(
+        "WorkflowExtendRequest",
+        expect.objectContaining({ logicalPlan: expect.any(Object) })
+      );
+
+      service.handleReconfigurationEvent({
+        type: "WorkflowExtendResponse",
+        addedOperatorIds: ["added"],
+        isValid: true,
+        errorMessage: "",
+      } as any);
+      expect(service.isInRun("added")).toBe(true);
     });
   });
 });

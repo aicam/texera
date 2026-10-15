@@ -179,6 +179,12 @@ export type ModifyLogicCompletedEvent = Readonly<{
   opIds: readonly string[];
 }>;
 
+export type WorkflowExtendResponse = Readonly<{
+  addedOperatorIds: readonly string[];
+  isValid: boolean;
+  errorMessage: string;
+}>;
+
 export type DebugCommandRequest = Readonly<{
   operatorId: string;
   workerId: string;
@@ -197,6 +203,7 @@ export type TexeraWebsocketRequestTypeMap = {
   RetryRequest: { workers: ReadonlyArray<string> };
   SkipTupleRequest: { workers: ReadonlyArray<string> };
   WorkflowExecuteRequest: WorkflowExecuteRequest;
+  WorkflowExtendRequest: { logicalPlan: LogicalPlan };
   WorkflowKillRequest: {};
   WorkflowPauseRequest: {};
   WorkflowCheckpointRequest: {};
@@ -220,6 +227,7 @@ export type TexeraWebsocketEventTypeMap = {
   WorkerAssignmentUpdateEvent: WorkerAssignmentUpdateEvent;
   ModifyLogicResponse: ModifyLogicResponse;
   ModifyLogicCompletedEvent: ModifyLogicCompletedEvent;
+  WorkflowExtendResponse: WorkflowExtendResponse;
   ExecutionDurationUpdateEvent: ExecutionDurationUpdateEvent;
   ClusterStatusUpdateEvent: ClusterStatusUpdateEvent;
   RegionUpdateEvent: RegionUpdateEvent;

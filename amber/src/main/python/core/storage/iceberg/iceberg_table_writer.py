@@ -113,6 +113,9 @@ class IcebergTableWriter(BufferedItemWriter[T]):
         append_to_table_with_retry(df)
         self.buffer.clear()
 
+    def flush(self) -> None:
+        self._flush_buffer()
+
     def close(self) -> None:
         """Close the writer, ensuring any remaining buffered items are flushed."""
         if self.buffer:

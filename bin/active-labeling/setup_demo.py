@@ -120,6 +120,12 @@ def main() -> None:
     parser.add_argument("--truth", default="brain-mri-gt")
     parser.add_argument("--seed-labels", type=int, default=20)
     parser.add_argument("--simulated", action="store_true", help="label with the simulated annotator")
+    parser.add_argument(
+        "--live-editing",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="keep every output, so operators can be added to the workflow while it runs",
+    )
     args = parser.parse_args()
     labels, queue, model = f"{args.prefix}-masks", f"{args.prefix}-review-queue", f"{args.prefix}-unet"
 
@@ -183,7 +189,11 @@ def main() -> None:
         "commentBoxes": [],
         # One tuple per batch: suggestions and labels must reach the next
         # operator as soon as they exist, not when 400 have piled up.
-        "settings": {"dataTransferBatchSize": 1, "executionMode": "PIPELINED"},
+        "settings": {
+            "dataTransferBatchSize": 1,
+            "executionMode": "PIPELINED",
+            "liveEditing": args.live_editing,
+        },
     }
     name = f"Brain MRI active labeling ({args.prefix})" + (" simulated" if args.simulated else "")
     created = requests.post(

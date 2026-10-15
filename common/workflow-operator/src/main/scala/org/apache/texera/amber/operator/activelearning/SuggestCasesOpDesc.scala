@@ -81,6 +81,9 @@ class SuggestCasesOpDesc extends PythonOperatorDescriptor with ActiveLabelingRes
        |        self.suggester = Suggester($scansDataset, $labelsDataset, $queueDataset, $modelName,
        |                                   $batchSize, $refillBelow, $poolSample, $maxRounds, $ranking)
        |
+       |    def on_reconfigure(self) -> None:
+       |        self.suggester.reconfigure($modelName, $batchSize, $refillBelow, $poolSample, $maxRounds, $ranking)
+       |
        |    @overrides
        |    def process_tuple(self, tuple_: Tuple, port: int) -> Iterator[Optional[TupleLike]]:
        |        if port == 0:
@@ -105,7 +108,10 @@ class SuggestCasesOpDesc extends PythonOperatorDescriptor with ActiveLabelingRes
         InputPort(PortIdentity(), displayName = "pool"),
         InputPort(PortIdentity(1), displayName = "model updates")
       ),
-      outputPorts = List(OutputPort())
+      outputPorts = List(OutputPort()),
+      // Its model, ranking and round sizes can change while people label; the pool and the
+      // open suggestions carry over.
+      supportReconfiguration = true
     )
 
   override def getOutputSchemas(inputSchemas: Map[PortIdentity, Schema]): Map[PortIdentity, Schema] =

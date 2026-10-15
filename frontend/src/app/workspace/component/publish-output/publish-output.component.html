@@ -1,0 +1,96 @@
+<!--
+ Licensed to the Apache Software Foundation (ASF) under one
+ or more contributor license agreements.  See the NOTICE file
+ distributed with this work for additional information
+ regarding copyright ownership.  The ASF licenses this file
+ to you under the Apache License, Version 2.0 (the
+ "License"); you may not use this file except in compliance
+ with the License.  You may obtain a copy of the License at
+
+   http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing,
+ software distributed under the License is distributed on an
+ "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ KIND, either express or implied.  See the License for the
+ specific language governing permissions and limitations
+ under the License.
+-->
+
+<div
+  class="publish-output"
+  *ngIf="!loading">
+  <ng-container *ngIf="!published">
+    <p>
+      Other workflows read <b>{{ data.operatorName }}</b>'s output in place with a <b>Shared Output</b> source: the
+      newest run's rows, and new rows as long as that run goes on.
+    </p>
+    <label for="shared-output-name">Name</label>
+    <input
+      id="shared-output-name"
+      nz-input
+      [(ngModel)]="name"
+      placeholder="brain-labels" />
+    <label for="shared-output-description">Description</label>
+    <input
+      id="shared-output-description"
+      nz-input
+      [(ngModel)]="description"
+      placeholder="What each row is" />
+    <button
+      nz-button
+      nzType="primary"
+      [disabled]="!name.trim()"
+      (click)="publish()">
+      Publish
+    </button>
+  </ng-container>
+
+  <ng-container *ngIf="published">
+    <nz-alert
+      nzType="success"
+      nzShowIcon
+      [nzMessage]="'Published'"
+      [nzDescription]="referenceHint"></nz-alert>
+    <ng-template #referenceHint>
+      In another workflow, add a <b>Shared Output</b> source and enter
+      <span
+        nz-typography
+        nzCopyable
+        [nzCopyText]="published.reference"
+        ><code>{{ published.reference }}</code></span
+      >
+    </ng-template>
+
+    <ng-container *ngIf="published.isOwner">
+      <h4>Who else can read it</h4>
+      <div class="readers">
+        <nz-tag
+          *ngFor="let reader of access"
+          nzMode="closeable"
+          (nzOnClose)="revoke(reader.email)"
+          >{{ reader.email }}</nz-tag
+        >
+        <span *ngIf="access.length === 0">Only you</span>
+      </div>
+      <div class="share-row">
+        <input
+          nz-input
+          [(ngModel)]="readerEmail"
+          (keyup.enter)="share()"
+          placeholder="colleague@uci.edu" />
+        <button
+          nz-button
+          (click)="share()">
+          Share
+        </button>
+      </div>
+      <button
+        nz-button
+        nzDanger
+        (click)="unpublish()">
+        Unpublish
+      </button>
+    </ng-container>
+  </ng-container>
+</div>

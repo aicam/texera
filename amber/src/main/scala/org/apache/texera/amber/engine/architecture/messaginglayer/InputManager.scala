@@ -53,7 +53,8 @@ class InputManager(
       portId: PortIdentity,
       schema: Schema,
       urisToRead: List[URI],
-      partitionings: List[Partitioning]
+      partitionings: List[Partitioning],
+      liveUris: Set[URI] = Set.empty
   ): Unit = {
     assert(urisToRead.size == partitionings.size)
     // each port can only be added and initialized once.
@@ -63,13 +64,14 @@ class InputManager(
     this.ports(portId) = WorkerPort(schema)
 
     // if a materialization URI is provided, set up a materialization reader thread
-    setupInputPortMaterializationReaderThreads(portId, urisToRead, partitionings)
+    setupInputPortMaterializationReaderThreads(portId, urisToRead, partitionings, liveUris)
   }
 
   private def setupInputPortMaterializationReaderThreads(
       portId: PortIdentity,
       uris: List[URI],
-      partitionings: List[Partitioning]
+      partitionings: List[Partitioning],
+      liveUris: Set[URI]
   ): Unit = {
     if (uris.isEmpty) {
       return
@@ -80,7 +82,8 @@ class InputManager(
           uri = uri,
           inputMessageQueue = this.inputMessageQueue,
           workerActorId = this.actorId,
-          partitioning = partitioning
+          partitioning = partitioning,
+          live = liveUris.contains(uri)
         )
     }
 
@@ -90,6 +93,14 @@ class InputManager(
   def getInputPortReaderThreads: Map[PortIdentity, List[InputPortMaterializationReaderThread]] = {
     this.inputPortMaterializationReaderThreads.toMap
   }
+
+  /**
+    * Lets the live readers of these storage URIs finish once they have read what is left.
+    */
+  def endLiveInputs(uris: Set[URI]): Unit =
+    inputPortMaterializationReaderThreads.values.flatten
+      .filter(reader => uris.contains(reader.storageUri))
+      .foreach(_.endLive())
 
   def startInputPortReaderThreads(): Unit = {
     this.inputPortMaterializationReaderThreads

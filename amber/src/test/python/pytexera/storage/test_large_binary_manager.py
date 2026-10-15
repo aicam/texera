@@ -44,6 +44,7 @@ def _init_storage_config():
             table_state_namespace="test-state",
             directory_path="/tmp/test",
             commit_batch_size=1000,
+            commit_interval_ms=2000,
             s3_endpoint="http://localhost:9000",
             s3_region="us-east-1",
             s3_auth_username="rustfsadmin",

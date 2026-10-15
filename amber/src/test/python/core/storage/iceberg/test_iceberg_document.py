@@ -64,6 +64,7 @@ StorageConfig.initialize(
     table_state_namespace="operator-port-state",
     directory_path=tempfile.mkdtemp(prefix="texera-iceberg-warehouse-"),
     commit_batch_size=4096,
+    commit_interval_ms=2000,
     s3_endpoint="http://localhost:9000",
     s3_region="us-east-1",
     s3_auth_username="rustfsadmin",

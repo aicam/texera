@@ -105,6 +105,14 @@ class Operator(ABC):
         """
         pass
 
+    def on_reconfigure(self) -> None:
+        """
+        Called after the operator's code was replaced while it runs. The state the
+        old code built carries over and `open` does not run again, so override this
+        to apply what the new code changes, such as a setting `open` read.
+        """
+        pass
+
     def process_state(self, state: State, port: int) -> Optional[State]:
         """
         Process an input State from the given link.

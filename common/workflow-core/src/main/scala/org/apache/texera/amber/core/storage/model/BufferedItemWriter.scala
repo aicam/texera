@@ -49,4 +49,9 @@ trait BufferedItemWriter[T] {
     * @param item the data item to be written.
     */
   def putOne(item: T): Unit
+
+  /**
+    * Write the buffered items to the underlying storage now, even if the buffer is not full.
+    */
+  def flush(): Unit
 }

@@ -72,3 +72,20 @@ class TestLifecycle:
 
         writer_mock.close.assert_called_once_with()
         writer_mock.open.assert_not_called()
+
+
+class TestCommitInterval:
+    def test_an_idle_writer_flushes_once_and_waits(self, writer_mock):
+        import threading
+        from queue import Queue
+
+        queue = Queue()
+        writer = PortStorageWriter(
+            buffered_item_writer=writer_mock, queue=queue, commit_interval_seconds=0.05
+        )
+        queue.put(PortStorageWriterElement(data_tuple=object()))
+        writer.receive(writer.interruptible_get())
+        threading.Timer(0.3, lambda: queue.put(PortStorageWriter.RUNNABLE_STOP)).start()
+        with pytest.raises(PortStorageWriter.InterruptRunnable):
+            writer.interruptible_get()
+        writer_mock.flush.assert_called_once_with()

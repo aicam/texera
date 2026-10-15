@@ -333,7 +333,8 @@ class ExecutionResultService(
   def attachToExecution(
       executionId: ExecutionIdentity,
       stateStore: ExecutionStateStore,
-      physicalPlan: PhysicalPlan,
+      // By name: operators added while the execution runs extend the plan.
+      physicalPlan: => PhysicalPlan,
       client: AmberClient
   ): Unit = {
     if (resultUpdateCancellable != null && !resultUpdateCancellable.isCancelled) {

@@ -26,6 +26,9 @@ from core.architecture.handlers.control.debug_command_handler import (
     WorkerDebugCommandHandler,
 )
 from core.architecture.handlers.control.end_channel_handler import EndChannelHandler
+from core.architecture.handlers.control.end_live_inputs_handler import (
+    EndLiveInputsHandler,
+)
 from core.architecture.handlers.control.end_worker_handler import EndWorkerHandler
 from core.architecture.handlers.control.evaluate_expression_handler import (
     EvaluateExpressionHandler,
@@ -68,5 +71,6 @@ class AsyncRPCHandlerInitializer(
     EndChannelHandler,
     NoOperationHandler,
     UpdateExecutorHandler,
+    EndLiveInputsHandler,
 ):
     pass

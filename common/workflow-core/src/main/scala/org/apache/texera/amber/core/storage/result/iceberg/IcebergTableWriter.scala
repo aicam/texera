@@ -135,6 +135,8 @@ private[storage] class IcebergTableWriter[T](
     }
   }
 
+  override def flush(): Unit = flushBuffer()
+
   /**
     * Close the writer, ensuring any remaining buffered items are flushed.
     */

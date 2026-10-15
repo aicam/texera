@@ -40,7 +40,7 @@ import { FileSaverService } from "../../../dashboard/service/user/file/file-save
 import { NotificationService } from "src/app/common/service/notification/notification.service";
 import { OperatorMenuService } from "../../service/operator-menu/operator-menu.service";
 import { CoeditorPresenceService } from "../../service/workflow-graph/model/coeditor-presence.service";
-import { firstValueFrom, of } from "rxjs";
+import { firstValueFrom, merge, of } from "rxjs";
 import { NzModalService } from "ng-zorro-antd/modal";
 import { ResultExportationComponent } from "../result-exportation/result-exportation.component";
 import { ReportGenerationService } from "../../service/report-generation/report-generation.service";
@@ -167,6 +167,8 @@ export class MenuComponent implements OnInit, OnDestroy {
 
   // variable bound with HTML to decide if the running spinner should show
   public runButtonText = "Run";
+  // Operators on the canvas that a run with live editing on has not started yet.
+  public operatorsNotInRun: string[] = [];
   public runIcon = "play-circle";
   public runDisable = false;
 
@@ -251,6 +253,18 @@ export class MenuComponent implements OnInit, OnDestroy {
       .subscribe(event => {
         this.executionState = event.current.state;
         this.applyRunButtonBehavior(this.getRunButtonBehavior());
+      });
+
+    merge(
+      this.executeWorkflowService.getExecutionStateStream(),
+      this.executeWorkflowService.getRunOperatorsChangedStream(),
+      this.workflowActionService.workflowChanged()
+    )
+      .pipe(untilDestroyed(this))
+      .subscribe(() => {
+        this.operatorsNotInRun = this.executeWorkflowService.isLiveEditingRun()
+          ? this.executeWorkflowService.getOperatorsNotInRun()
+          : [];
       });
 
     // set the map of operatorStatusMap

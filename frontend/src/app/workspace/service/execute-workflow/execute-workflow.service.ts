@@ -91,6 +91,11 @@ export class ExecuteWorkflowService {
   }>();
 
   private regionUpdateStream = new Subject<RegionUpdateEvent>();
+  // The operators of the current run, including those added to it while it runs, and whether
+  // the run keeps every output so operators can be added to it.
+  private runOperatorIds = new Set<string>();
+  private liveEditingRun = false;
+  private readonly runOperatorsChanged = new Subject<void>();
   private regionStateStream = new Subject<RegionStateEvent>();
 
   // TODO: move this to another service, or redesign how this
@@ -149,6 +154,17 @@ export class ExecuteWorkflowService {
 
   public handleReconfigurationEvent(event: TexeraWebsocketEvent) {
     switch (event.type) {
+      case "WorkflowExtendResponse":
+        if (!event.isValid) {
+          this.notificationService.error(event.errorMessage);
+        } else {
+          event.addedOperatorIds.forEach(id => this.runOperatorIds.add(id));
+          this.runOperatorsChanged.next();
+          this.notificationService.success(
+            `Added ${event.addedOperatorIds.length} operator(s) to the running workflow`
+          );
+        }
+        return;
       case "ModifyLogicResponse":
         if (!event.isValid) {
           this.notificationService.error(event.errorMessage);
@@ -367,6 +383,10 @@ export class ExecuteWorkflowService {
       console.warn("No computing unit selected for workflow execution");
     }
 
+    this.runOperatorIds = new Set(logicalPlan.operators.map(op => op.operatorID));
+    this.liveEditingRun = workflowSettings.liveEditing ?? false;
+    this.runOperatorsChanged.next();
+
     const workflowExecuteRequest = {
       executionName: executionName,
       engineVersion: version.buildNumber,
@@ -442,8 +462,47 @@ export class ExecuteWorkflowService {
     this.workflowWebsocketService.send("RetryRequest", { workers });
   }
 
+  /**
+   * Whether the current run keeps every output, so the workflow stays editable while it runs and
+   * operators added to it can be started inside the run.
+   */
+  public isLiveEditingRun(): boolean {
+    return this.liveEditingRun && [ExecutionState.Running, ExecutionState.Paused].includes(this.currentState.state);
+  }
+
+  /**
+   * The operators on the canvas the current run does not have yet.
+   */
+  public getOperatorsNotInRun(): string[] {
+    return this.workflowActionService
+      .getTexeraGraph()
+      .getAllEnabledOperators()
+      .map(op => op.operatorID)
+      .filter(id => !this.runOperatorIds.has(id));
+  }
+
+  public isInRun(operatorID: string): boolean {
+    return this.runOperatorIds.has(operatorID);
+  }
+
+  public getRunOperatorsChangedStream(): Observable<void> {
+    return this.runOperatorsChanged.asObservable();
+  }
+
+  /**
+   * Starts the operators added on the canvas inside the running workflow. They may read the output
+   * of running operators, which they follow until those operators finish.
+   */
+  public addToRunningWorkflow(): void {
+    if (!this.isLiveEditingRun()) {
+      throw new Error("operators can only be added to a running workflow with live editing on");
+    }
+    const logicalPlan = ExecuteWorkflowService.getLogicalPlanRequest(this.workflowActionService.getTexeraGraph());
+    this.workflowWebsocketService.send("WorkflowExtendRequest", { logicalPlan });
+  }
+
   public modifyOperatorLogic(operatorID: string): void {
-    if (this.currentState.state !== ExecutionState.Paused) {
+    if (this.currentState.state !== ExecutionState.Paused && !this.isLiveEditingRun()) {
       throw new Error("cannot modify logic, the current execution state is " + this.currentState.state);
     }
     const op = this.workflowActionService.getTexeraGraph().getOperator(operatorID);
@@ -520,10 +579,17 @@ export class ExecuteWorkflowService {
         this.workflowActionService.enableWorkflowModification();
         return;
       case ExecutionState.Paused:
+      case ExecutionState.Running:
+        // A run with live editing on takes new operators while it goes.
+        if (this.liveEditingRun) {
+          this.workflowActionService.enableWorkflowModification();
+        } else {
+          this.workflowActionService.disableWorkflowModification();
+        }
+        return;
       case ExecutionState.Pausing:
       case ExecutionState.Recovering:
       case ExecutionState.Resuming:
-      case ExecutionState.Running:
       case ExecutionState.Initializing:
         this.workflowActionService.disableWorkflowModification();
         return;

@@ -25,5 +25,7 @@ case class WorkflowSettings(
     dataTransferBatchSize: Int = 400,
     executionMode: ExecutionMode =
       ExecutionMode.valueOf(GuiConfig.guiWorkflowWorkspaceDefaultExecutionMode),
-    outputPortsNeedingStorage: Set[GlobalPortIdentity] = Set.empty
+    outputPortsNeedingStorage: Set[GlobalPortIdentity] = Set.empty,
+    // Keep every operator's output, so operators can be attached to any running operator.
+    liveEditing: Boolean = false
 )

@@ -35,6 +35,7 @@ import org.apache.texera.web.model.websocket.request.python.{
     new Type(value = classOf[RetryRequest]),
     new Type(value = classOf[SkipTupleRequest]),
     new Type(value = classOf[WorkflowExecuteRequest]),
+    new Type(value = classOf[WorkflowExtendRequest]),
     new Type(value = classOf[WorkflowKillRequest]),
     new Type(value = classOf[WorkflowPauseRequest]),
     new Type(value = classOf[WorkflowResumeRequest]),

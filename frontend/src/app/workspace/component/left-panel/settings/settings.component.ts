@@ -27,6 +27,7 @@ import { UserService } from "../../../../common/service/user/user.service";
 import { NotificationService } from "src/app/common/service/notification/notification.service";
 import { ExecutionMode } from "../../../../common/type/workflow";
 import { NzRadioGroupComponent, NzRadioComponent } from "ng-zorro-antd/radio";
+import { NzCheckboxComponent } from "ng-zorro-antd/checkbox";
 import { NgClass, NgIf } from "@angular/common";
 
 @UntilDestroy()
@@ -34,7 +35,15 @@ import { NgClass, NgIf } from "@angular/common";
   selector: "texera-settings",
   templateUrl: "./settings.component.html",
   styleUrls: ["./settings.component.scss"],
-  imports: [FormsModule, ReactiveFormsModule, NzRadioGroupComponent, NzRadioComponent, NgClass, NgIf],
+  imports: [
+    FormsModule,
+    ReactiveFormsModule,
+    NzRadioGroupComponent,
+    NzRadioComponent,
+    NzCheckboxComponent,
+    NgClass,
+    NgIf,
+  ],
 })
 export class SettingsComponent implements OnInit {
   settingsForm: FormGroup;
@@ -52,6 +61,7 @@ export class SettingsComponent implements OnInit {
         [Validators.required, Validators.min(1)],
       ],
       executionMode: [this.workflowActionService.getWorkflowContent().settings.executionMode],
+      liveEditing: [this.workflowActionService.getWorkflowContent().settings.liveEditing ?? false],
     });
   }
 
@@ -72,6 +82,14 @@ export class SettingsComponent implements OnInit {
         this.updateExecutionMode(mode);
       });
 
+    this.settingsForm
+      .get("liveEditing")!
+      .valueChanges.pipe(untilDestroyed(this))
+      .subscribe((liveEditing: boolean) => {
+        this.workflowActionService.updateLiveEditing(liveEditing);
+        this.persistWorkflow();
+      });
+
     // The settings can move without the form: undo/redo, a reloaded workflow (workflowChanged), or
     // a co-editor's edit, which arrives on workflowSettingsChanged$ alone -- a settings change is
     // not part of workflowChanged, since this panel persists its own and the autosave behind
@@ -83,6 +101,7 @@ export class SettingsComponent implements OnInit {
           {
             dataTransferBatchSize: this.workflowActionService.getWorkflowContent().settings.dataTransferBatchSize,
             executionMode: this.workflowActionService.getWorkflowContent().settings.executionMode,
+            liveEditing: this.workflowActionService.getWorkflowContent().settings.liveEditing ?? false,
           },
           { emitEvent: false }
         );

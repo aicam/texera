@@ -1144,6 +1144,10 @@ export class WorkflowActionService {
     }
   }
 
+  public updateLiveEditing(liveEditing: boolean): void {
+    this.setWorkflowSettings({ ...this.getWorkflowSettings(), liveEditing });
+  }
+
   public updateExecutionMode(mode: ExecutionMode): void {
     this.setWorkflowSettings({ ...this.getWorkflowSettings(), executionMode: mode });
   }

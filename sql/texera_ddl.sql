@@ -49,6 +49,8 @@ SET search_path TO texera_db, public;
 DROP TABLE IF EXISTS operator_executions CASCADE;
 DROP TABLE IF EXISTS operator_port_executions CASCADE;
 DROP TABLE IF EXISTS operator_port_cache CASCADE;
+DROP TABLE IF EXISTS shared_output_user_access CASCADE;
+DROP TABLE IF EXISTS shared_output CASCADE;
 DROP TABLE IF EXISTS workflow_user_access CASCADE;
 DROP TABLE IF EXISTS workflow_of_user CASCADE;
 DROP TABLE IF EXISTS user_config CASCADE;
@@ -579,6 +581,38 @@ CREATE TABLE operator_port_cache
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (workflow_id, global_port_id, cache_key_hash),
     FOREIGN KEY (workflow_id) REFERENCES workflow(wid) ON DELETE CASCADE
+);
+
+-- shared_output
+-- An operator output port published under a name, so other workflows, including other users'
+-- pipelines, read it in place. A reader always gets the newest execution of the workflow that has
+-- this port's result, and follows it while that execution runs. The port's results are kept when
+-- the workflow runs again, until the run after next, so a reader of the previous run is not cut off.
+CREATE TABLE IF NOT EXISTS shared_output
+(
+    soid          SERIAL PRIMARY KEY,
+    name          VARCHAR(128) NOT NULL,
+    description   TEXT,
+    owner_uid     INT NOT NULL,
+    wid           INT NOT NULL,
+    operator_id   VARCHAR(100) NOT NULL,
+    port_id       INT NOT NULL DEFAULT 0,
+    creation_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (owner_uid, name),
+    UNIQUE (wid, operator_id, port_id),
+    FOREIGN KEY (owner_uid) REFERENCES "user"(uid) ON DELETE CASCADE,
+    FOREIGN KEY (wid) REFERENCES workflow(wid) ON DELETE CASCADE
+);
+
+-- shared_output_user_access
+CREATE TABLE IF NOT EXISTS shared_output_user_access
+(
+    soid      INT NOT NULL,
+    uid       INT NOT NULL,
+    privilege privilege_enum NOT NULL DEFAULT 'READ',
+    PRIMARY KEY (soid, uid),
+    FOREIGN KEY (soid) REFERENCES shared_output(soid) ON DELETE CASCADE,
+    FOREIGN KEY (uid) REFERENCES "user"(uid) ON DELETE CASCADE
 );
 
 -- workflow_user_likes

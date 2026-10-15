@@ -28,6 +28,8 @@ export enum ExecutionMode {
 export interface WorkflowSettings {
   dataTransferBatchSize: number;
   executionMode: ExecutionMode;
+  // Keep every operator's output, so operators can be added to a run and attached to any of them.
+  liveEditing?: boolean;
 }
 
 /**

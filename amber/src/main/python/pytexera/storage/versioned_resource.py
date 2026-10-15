@@ -51,7 +51,7 @@ class VersionedResource:
         self.id = self._find_id()
         if self.id is None:
             if not create:
-                raise ValueError(f"No {kind.value} named '{name}' is owned by this user.")
+                raise ValueError(f"No {kind.value} named '{name}' is owned by or shared with this user.")
             self.id = self._create()
 
     @staticmethod
@@ -82,10 +82,12 @@ class VersionedResource:
         key, id_key = (
             ("dataset", "did") if self.kind == ResourceType.DATASET else ("model", "mid")
         )
-        for entry in self._request("GET", "/list").json():
-            if entry["isOwner"] and entry[key]["name"] == self.name:
-                self.owner_email = entry["ownerEmail"]
-                return entry[key][id_key]
+        # One's own resource first; otherwise one another user shared, so pipelines
+        # built by different people can read the same labels.
+        named = [e for e in self._request("GET", "/list").json() if e[key]["name"] == self.name]
+        for entry in sorted(named, key=lambda e: not e["isOwner"]):
+            self.owner_email = entry["ownerEmail"]
+            return entry[key][id_key]
         return None
 
     def _create(self) -> int:
@@ -115,6 +117,11 @@ class VersionedResource:
         """The newest version's row (id, name, creation time), or None before the first."""
         latest = self._latest()
         return None if latest is None else latest[0]
+
+    def versions(self) -> List[dict]:
+        """Every version's row, oldest first."""
+        rows = self._request("GET", f"/{self.id}/version/list").json()
+        return sorted(rows, key=lambda row: row["dvid" if self.kind == ResourceType.DATASET else "mvid"])
 
     def latest_file_paths(self) -> List[str]:
         """Every file path in the newest version, relative to the version root."""

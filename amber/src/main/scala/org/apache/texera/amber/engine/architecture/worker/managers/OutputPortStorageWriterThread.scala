@@ -22,15 +22,21 @@ package org.apache.texera.amber.engine.architecture.worker.managers
 import com.google.common.collect.Queues
 import org.apache.texera.amber.core.storage.model.BufferedItemWriter
 import org.apache.texera.amber.core.tuple.Tuple
+import org.apache.texera.common.config.StorageConfig
 
-import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
 import scala.util.control.NonFatal
 
 sealed trait TerminateSignal
 case object PortStorageWriterTerminateSignal extends TerminateSignal
 
+/**
+  * Writes a port's tuples to storage. A partly filled buffer is flushed once it has waited
+  * `commitIntervalMs`, so a slow producer's rows reach readers that follow the port live.
+  */
 class OutputPortStorageWriterThread(
-    bufferedItemWriter: BufferedItemWriter[Tuple]
+    bufferedItemWriter: BufferedItemWriter[Tuple],
+    commitIntervalMs: Long = StorageConfig.icebergTableCommitIntervalMs.toLong
 ) extends Thread {
 
   val queue: LinkedBlockingQueue[Either[Tuple, TerminateSignal]] =
@@ -48,10 +54,19 @@ class OutputPortStorageWriterThread(
   override def run(): Unit = {
     try {
       var internalStop = false
+      var oldestUnflushedAt: Option[Long] = None
       while (!internalStop) {
-        queue.take() match {
-          case Left(tuple) => bufferedItemWriter.putOne(tuple)
-          case Right(_)    => internalStop = true
+        val waitMs = oldestUnflushedAt
+          .map(at => math.max(0L, at + commitIntervalMs - System.currentTimeMillis()))
+          .getOrElse(Long.MaxValue)
+        Option(queue.poll(waitMs, TimeUnit.MILLISECONDS)) match {
+          case Some(Left(tuple)) =>
+            bufferedItemWriter.putOne(tuple)
+            if (oldestUnflushedAt.isEmpty) oldestUnflushedAt = Some(System.currentTimeMillis())
+          case Some(Right(_)) => internalStop = true
+          case None =>
+            bufferedItemWriter.flush()
+            oldestUnflushedAt = None
         }
       }
     } catch {

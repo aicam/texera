@@ -27,7 +27,7 @@ import org.apache.texera.common.config.{ApplicationConfig, StorageConfig}
 import org.apache.texera.dao.SqlServer
 import org.apache.texera.dao.jooq.generated.Tables.USER_WAREHOUSE
 import org.apache.texera.amber.core.WorkflowRuntimeException
-import org.apache.texera.amber.core.storage.DocumentFactory
+import org.apache.texera.amber.core.storage.{DocumentFactory, SharedOutputs}
 import org.apache.texera.amber.core.storage.result.iceberg.OnIceberg
 import org.apache.texera.amber.core.virtualidentity.{
   EmbeddedControlMessageIdentity,
@@ -160,7 +160,8 @@ class WorkflowService(
       WorkflowExecutionService
         .getLatestExecutionId(workflowId, computingUnitId)
         .foreach(eid => {
-          clearExecutionResources(eid)
+          // Published outputs stay for the workflows that read them.
+          clearExecutionResources(eid, keepShared = true)
         })
       WorkflowService.workflowServiceMapping.remove(mkWorkflowStateId(workflowId))
       if (executionService.getValue != null) {
@@ -254,7 +255,12 @@ class WorkflowService(
     val previousExecutionId =
       WorkflowExecutionService.getLatestExecutionId(workflowId, req.computingUnitId)
     previousExecutionId.foreach(eid => {
-      clearExecutionResources(eid)
+      // A published output of the previous run stays until the run after this one, so a
+      // workflow still reading it is not cut off; the one kept from before goes now.
+      clearExecutionResources(eid, keepShared = true)
+      SharedOutputs.keptResultsBefore(workflowId.id.toInt, eid.id).foreach {
+        case (oldEid, uri) => clearResults(ExecutionIdentity(oldEid), List(uri))
+      }
     }) // TODO: change this behavior after enabling cache.
 
     workflowContext.executionId = ExecutionsMetadataPersistService.insertNewExecution(
@@ -376,13 +382,15 @@ class WorkflowService(
     *
     * @param eid The execution identity to clean up resources for
     */
-  private def clearExecutionResources(eid: ExecutionIdentity): Unit = {
+  private def clearExecutionResources(eid: ExecutionIdentity, keepShared: Boolean = false): Unit = {
     // Retrieve URIs for all resources associated with this execution
-    val resultUris = WorkflowExecutionsResource.getResultUrisByExecutionId(eid)
+    val (keptUris, resultUris) = WorkflowExecutionsResource
+      .getResultUrisByExecutionId(eid)
+      .partition(uri => keepShared && SharedOutputs.isSharedResult(workflowId.id.toInt, uri))
     val consoleMessagesUris = WorkflowExecutionsResource.getConsoleMessagesUriByExecutionId(eid)
 
     // Remove references from registry first
-    WorkflowExecutionsResource.deleteConsoleMessageAndExecutionResultUris(eid)
+    WorkflowExecutionsResource.deleteConsoleMessageAndExecutionResultUris(eid, keptUris)
 
     // Clean up all result and console message documents. While per-user warehouses are
     // disabled, cleanup must not reach into them (#6930) — those URIs are skipped.
@@ -417,6 +425,26 @@ class WorkflowService(
         }
     }
     // Delete this execution's large binaries
-    LargeBinaryManager.deleteByExecution(eid.id)
+    if (keptUris.isEmpty) LargeBinaryManager.deleteByExecution(eid.id)
+  }
+
+  /**
+    * Clears results an execution kept for workflows reading its published outputs, and the
+    * execution's large binaries once none of its results are left.
+    */
+  private def clearResults(eid: ExecutionIdentity, uris: List[URI]): Unit = {
+    uris.foreach { uri =>
+      WorkflowExecutionsResource.deleteResultUri(eid, uri)
+      if (!WarehouseReadGuard.skipWhileDisabled(uri)) {
+        try DocumentFactory.openDocument(uri)._1.clear()
+        catch {
+          case error: Throwable =>
+            logger.debug(s"Error processing document at $uri: ${error.getMessage}")
+        }
+      }
+    }
+    if (WorkflowExecutionsResource.getResultUrisByExecutionId(eid).isEmpty) {
+      LargeBinaryManager.deleteByExecution(eid.id)
+    }
   }
 }

@@ -1499,7 +1499,10 @@ export class OperatorPropertyEditFrameComponent implements OnInit, OnChanges, On
     if (this.currentOperatorId) {
       try {
         this.executeWorkflowService.modifyOperatorLogic(this.currentOperatorId);
-        this.setInteractivity(false);
+        // A live-editing run keeps the workflow editable.
+        if (!this.executeWorkflowService.isLiveEditingRun()) {
+          this.setInteractivity(false);
+        }
       } catch (e) {
         this.notificationService.error((e as Error).message);
       }

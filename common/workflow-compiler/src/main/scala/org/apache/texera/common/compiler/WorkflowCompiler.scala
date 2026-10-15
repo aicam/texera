@@ -230,7 +230,8 @@ class WorkflowCompiler(
   ): (PhysicalPlan, Set[GlobalPortIdentity]) = {
     val terminalLogicalOps = logicalPlan.getTerminalOperatorIds
     val logicalOpsNeedingStorage =
-      (terminalLogicalOps ++ logicalOpsToViewResult.map(OperatorIdentity(_))).toSet
+      if (context.workflowSettings.liveEditing) logicalPlan.getTopologicalOpIds.asScala.toSet
+      else (terminalLogicalOps ++ logicalOpsToViewResult.map(OperatorIdentity(_))).toSet
     var physicalPlan = PhysicalPlan(operators = Set.empty, links = Set.empty)
     val outputPortsNeedingStorage: mutable.HashSet[GlobalPortIdentity] = mutable.HashSet()
 

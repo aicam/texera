@@ -17,7 +17,7 @@
 
 import threading
 from pyarrow.lib import Table
-from typing import Iterator, Optional, Union, Dict, List, Set
+from typing import Collection, Iterator, Optional, Union, Dict, List, Set
 
 from core.models import Tuple, ArrowTableTupleProvider, Schema, InternalQueue
 from core.models.internal_marker import InternalMarker
@@ -78,7 +78,11 @@ class InputManager:
         return all(port.completed for port in self._ports.values())
 
     def set_up_input_port_mat_reader_threads(
-        self, port_id: PortIdentity, uris: List[str], partitionings: List[Partitioning]
+        self,
+        port_id: PortIdentity,
+        uris: List[str],
+        partitionings: List[Partitioning],
+        live_uris: Collection[str] = (),
     ) -> None:
         assert len(uris) == len(partitionings)
         if uris is not None:
@@ -88,6 +92,7 @@ class InputManager:
                     queue=self._input_queue,
                     worker_actor_id=ActorVirtualIdentity(self.worker_id),
                     partitioning=partitioning,
+                    live=uri in live_uris,
                 )
                 for uri, partitioning in zip(uris, partitionings)
             ]
@@ -97,6 +102,13 @@ class InputManager:
         self,
     ) -> Dict[PortIdentity, List[InputPortMaterializationReaderRunnable]]:
         return self._input_port_mat_reader_runnables
+
+    def end_live_inputs(self, uris: Collection[str]) -> None:
+        """Lets the live readers of these storage URIs finish."""
+        for runnables in self._input_port_mat_reader_runnables.values():
+            for runnable in runnables:
+                if runnable.uri in uris:
+                    runnable.end_live()
 
     def start_input_port_mat_reader_threads(self):
         for port_reader_runnables in self._input_port_mat_reader_runnables.values():
@@ -123,6 +135,7 @@ class InputManager:
         schema: Schema,
         storage_uris: List[str],
         partitionings: List[Partitioning],
+        live_storage_uris: Collection[str] = (),
     ) -> None:
         if port_id.id is None:
             port_id.id = 0
@@ -133,7 +146,9 @@ class InputManager:
         if port_id not in self._ports:
             self._ports[port_id] = WorkerPort(schema)
 
-        self.set_up_input_port_mat_reader_threads(port_id, storage_uris, partitionings)
+        self.set_up_input_port_mat_reader_threads(
+            port_id, storage_uris, partitionings, live_storage_uris
+        )
 
     def get_port_id(self, channel_id: ChannelIdentity) -> PortIdentity:
         return self._channels[channel_id].port_id

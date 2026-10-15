@@ -76,13 +76,16 @@ import org.apache.texera.amber.operator.source.apis.reddit.RedditSearchSourceOpD
 import org.apache.texera.amber.operator.activelearning.{
   ReviewAndCorrectOpDesc,
   SuggestCasesOpDesc,
-  TrainSegmenterOpDesc
+  TrainSegmenterOpDesc,
+  AverageWeightsOpDesc,
+  LearningCurveOpDesc
 }
 import org.apache.texera.amber.operator.source.apis.twitter.v2.{
   TwitterFullArchiveSearchSourceOpDesc,
   TwitterSearchSourceOpDesc
 }
 import org.apache.texera.amber.operator.source.dataset.FileListerSourceOpDesc
+import org.apache.texera.amber.operator.source.shared.SharedOutputSourceOpDesc
 import org.apache.texera.amber.operator.source.fetcher.URLFetcherOpDesc
 import org.apache.texera.amber.operator.source.scan.arrow.ArrowSourceOpDesc
 import org.apache.texera.amber.operator.source.scan.csv.CSVScanSourceOpDesc
@@ -175,6 +178,7 @@ trait StateTransferFunc
     new Type(value = classOf[SankeyDiagramOpDesc], name = "SankeyDiagram"),
     new Type(value = classOf[IcicleChartOpDesc], name = "IcicleChart"),
     new Type(value = classOf[FileListerSourceOpDesc], name = "FileLister"),
+    new Type(value = classOf[SharedOutputSourceOpDesc], name = "SharedOutput"),
     new Type(value = classOf[CSVScanSourceOpDesc], name = "CSVFileScan"),
     // disabled the ParallelCSVScanSourceOpDesc so that it does not confuse user. it can be re-enabled when doing experiments.
     // new Type(value = classOf[ParallelCSVScanSourceOpDesc], name = "ParallelCSVFileScan"),
@@ -244,6 +248,8 @@ trait StateTransferFunc
     new Type(value = classOf[CSVOldScanSourceOpDesc], name = "CSVOldFileScan"),
     new Type(value = classOf[RedditSearchSourceOpDesc], name = "RedditSearch"),
     new Type(value = classOf[TrainSegmenterOpDesc], name = "TrainSegmenter"),
+    new Type(value = classOf[AverageWeightsOpDesc], name = "AverageWeights"),
+    new Type(value = classOf[LearningCurveOpDesc], name = "LearningCurve"),
     new Type(value = classOf[SuggestCasesOpDesc], name = "SuggestCases"),
     new Type(value = classOf[ReviewAndCorrectOpDesc], name = "ReviewAndCorrect"),
     new Type(value = classOf[PythonLambdaFunctionOpDesc], name = "PythonLambdaFunction"),

@@ -344,16 +344,27 @@ object WorkflowExecutionsResource {
       .toList
   }
 
-  def deleteConsoleMessageAndExecutionResultUris(eid: ExecutionIdentity): Unit = {
+  def deleteConsoleMessageAndExecutionResultUris(
+      eid: ExecutionIdentity,
+      keepResultUris: List[URI] = List.empty
+  ): Unit = {
     context
       .delete(OPERATOR_PORT_EXECUTIONS)
       .where(OPERATOR_PORT_EXECUTIONS.WORKFLOW_EXECUTION_ID.eq(eid.id.toInt))
+      .and(OPERATOR_PORT_EXECUTIONS.RESULT_URI.notIn(keepResultUris.map(_.toString).asJava))
       .execute()
     context
       .delete(OPERATOR_EXECUTIONS)
       .where(OPERATOR_EXECUTIONS.WORKFLOW_EXECUTION_ID.eq(eid.id.toInt))
       .execute()
   }
+
+  def deleteResultUri(eid: ExecutionIdentity, resultUri: URI): Unit =
+    context
+      .delete(OPERATOR_PORT_EXECUTIONS)
+      .where(OPERATOR_PORT_EXECUTIONS.WORKFLOW_EXECUTION_ID.eq(eid.id.toInt))
+      .and(OPERATOR_PORT_EXECUTIONS.RESULT_URI.eq(resultUri.toString))
+      .execute()
 
   /**
     * Removes all resources related to the specified execution IDs,

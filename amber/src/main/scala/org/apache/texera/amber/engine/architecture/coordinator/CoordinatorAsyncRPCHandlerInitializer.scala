@@ -49,6 +49,7 @@ class CoordinatorAsyncRPCHandlerInitializer(
     with TakeGlobalCheckpointHandler
     with EmbeddedControlMessageHandler
     with RetrieveWorkflowStateHandler
-    with ReconfigurationHandler {
+    with ReconfigurationHandler
+    with ExtendWorkflowHandler {
   val actorId: ActorVirtualIdentity = cp.actorId
 }

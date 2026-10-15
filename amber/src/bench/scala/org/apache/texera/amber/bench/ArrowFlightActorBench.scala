@@ -296,7 +296,7 @@ object ArrowFlightActorBench {
       sendCtl(
         ControlInvocation(
           "AssignPort",
-          AssignPortRequest(InputPortId, input = true, schemaMap, Seq.empty, Seq.empty),
+          AssignPortRequest(InputPortId, input = true, schemaMap, Seq.empty, Seq.empty, Seq.empty),
           ctx,
           1L
         )
@@ -304,7 +304,7 @@ object ArrowFlightActorBench {
       sendCtl(
         ControlInvocation(
           "AssignPort",
-          AssignPortRequest(OutputPortId, input = false, schemaMap, Seq.empty, Seq.empty),
+          AssignPortRequest(OutputPortId, input = false, schemaMap, Seq.empty, Seq.empty, Seq.empty),
           ctx,
           2L
         )
