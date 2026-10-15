@@ -71,3 +71,29 @@ def dice_loss(logits: torch.Tensor, target: torch.Tensor, eps: float = 1.0) -> t
     inter = (probs * target).sum(dim=(1, 2, 3))
     total = probs.sum(dim=(1, 2, 3)) + target.sum(dim=(1, 2, 3))
     return (1 - (2 * inter + eps) / (total + eps)).mean()
+
+
+def train_epochs(net: UNet, optimizer: torch.optim.Optimizer, images: torch.Tensor, masks: torch.Tensor,
+                 epochs: int, batch_size: int, rng) -> None:
+    """
+    Trains `net` in place for `epochs` passes over uint8 `images` and 0/255 `masks`
+    (N x 128 x 128), on whatever device `net` is on: dice + cross-entropy loss, random
+    horizontal flips, a fresh shuffle every epoch.
+    """
+    device = next(net.parameters()).device
+    x_all = images.float().div(255).unsqueeze(1)
+    y_all = masks.float().div(255).round().unsqueeze(1)
+    net.train()
+    for _ in range(epochs):
+        order = list(range(len(x_all)))
+        rng.shuffle(order)
+        for start in range(0, len(order), batch_size):
+            index = order[start:start + batch_size]
+            x, y = x_all[index].to(device), y_all[index].to(device)
+            if rng.random() < 0.5:
+                x, y = x.flip(-1), y.flip(-1)
+            logits = net(x)
+            loss = dice_loss(logits, y) + nn.functional.binary_cross_entropy_with_logits(logits, y)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()

@@ -19,29 +19,40 @@
 #
 # Input 0, the patient cohort: names the validation cases, the same 200 the plain
 #   U-Net scores itself on, so the two Dice scores compare directly.
-# Input 1, the corrected labels: every label a doctor submits. After each ROUND new
-#   labels this model trains EPOCHS more epochs and saves a version; the model it
-#   serves is the average of its last KEEP versions (batch norm recomputed on the
-#   labeled scans), where the plain U-Net serves its newest weights.
+# Input 1, the corrected labels: every label a doctor submits. Once ROUND new labels
+#   arrived, this model takes every label there is now, trains EPOCHS more epochs and
+#   saves a version, so it keeps up however fast people label; the model it serves is
+#   the average of its last KEEP versions, where the plain U-Net serves its newest
+#   weights.
 #
 # It starts from the plain U-Net's newest weights, so the two are equal when this
 # branch is added and every difference after that comes from averaging.
+#
+# Training runs on the GPU machine at GPU_TRAINER (bin/active-labeling/gpu_trainer.py),
+# which gets the round's labeled scans and the model's state and sends back the new
+# state; everything else stays here. Without it, or if it cannot be reached, the round
+# trains on this machine's CPU.
 from pytexera import *
 
 import io
 import json
+import os
 import random
+import time
 from datetime import datetime, timezone
 
 import numpy as np
+import requests
 import torch
 
-from pytexera.active_learning.data import dataset, dice, load_version, model, read_png
-from pytexera.active_learning.unet import UNet, dice_loss
+from pytexera.active_learning.data import dataset, dice, load_version, model
+from pytexera.active_learning.unet import UNet, train_epochs
 
 SCANS, TRUTH = "brain-mri", "brain-mri-gt"
 LABELS, PLAIN_MODEL, AVERAGED_MODEL = "{labels}", "{plain_model}", "{averaged_model}"
 ROUND, EPOCHS, KEEP, VALIDATION, BATCH = 8, 4, 3, 200, 16
+GPU_TRAINER = "http://100.83.167.29:8790"  # empty: train on this machine's CPU
+GPU_TOKEN_FILE = "~/.cache/active-labeling/gpu_trainer_token"
 
 
 def tensor(images):
@@ -94,33 +105,26 @@ class TrainWithWeightAveraging(UDFOperatorV2):
         yield from self.train_round()
 
     def add_label(self, row):
-        case = str(row["case"])
-        if case not in self.labels and case in self.scans:
-            png = self.labels_res.read_file(row["labels_version"], f"masks/{case}.png")
-            self.labels[case] = read_png(png)
+        if str(row["case"]) not in self.labels:
             self.new_labels += 1
         yield None
         if self.new_labels >= ROUND:
+            _, self.labels, _ = load_version(self.labels_res, "masks")  # every label there is now
             self.new_labels = 0
             yield from self.train_round()
 
     def train_round(self):
         names = [n for n in self.labels if n in self.scans]
-        self.net.train()
-        for _ in range(EPOCHS):
-            random.shuffle(names)
-            for start in range(0, len(names), BATCH):
-                batch = names[start:start + BATCH]
-                x = tensor([self.scans[n] for n in batch])
-                y = tensor([self.labels[n] for n in batch]).round()
-                if random.random() < 0.5:
-                    x, y = x.flip(-1), y.flip(-1)
-                logits = self.net(x)
-                loss = dice_loss(logits, y) + torch.nn.functional.binary_cross_entropy_with_logits(logits, y)
-                self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
-                yield None
+        images = torch.from_numpy(np.stack([self.scans[n] for n in names]))
+        masks = torch.from_numpy(np.stack([self.labels[n] for n in names]))
+        yield None
+        started = time.time()
+        where = self.train_on_gpu(images, masks)
+        if where is None:
+            train_epochs(self.net, self.optimizer, images, masks, EPOCHS, BATCH, random)
+            where = "this machine's CPU"
+        print(f"{len(names)} labels, {EPOCHS} epochs on {where} in {time.time() - started:.1f} s")
+        yield None
         self.versions = (self.versions + [{k: v.detach().clone() for k, v in self.net.state_dict().items()}])[-KEEP:]
         averaged = self.average(names)
         newest_dice, averaged_dice = self.score(self.net), self.score(averaged)
@@ -147,6 +151,27 @@ class TrainWithWeightAveraging(UDFOperatorV2):
             "published_model_version": published,
             "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
+
+    def train_on_gpu(self, images, masks):
+        """Trains the round on the GPU machine; None if there is none or it cannot be reached."""
+        if not GPU_TRAINER:
+            return None
+        request = io.BytesIO()
+        torch.save({"model": self.net.state_dict(), "optimizer": self.optimizer.state_dict(), "lr": 1e-3,
+                    "images": images, "masks": masks, "epochs": EPOCHS, "batch_size": BATCH,
+                    "seed": random.randrange(2**31)}, request)
+        try:
+            token = open(os.path.expanduser(GPU_TOKEN_FILE)).read().strip()
+            reply = requests.post(f"{GPU_TRAINER}/train", data=request.getvalue(), timeout=600,
+                                  headers={"Authorization": f"Bearer {token}"})
+            reply.raise_for_status()
+        except (OSError, requests.RequestException) as err:
+            print(f"GPU trainer unavailable ({err}); training on this machine's CPU")
+            return None
+        result = torch.load(io.BytesIO(reply.content), weights_only=True)
+        self.net.load_state_dict(result["model"])
+        self.optimizer.load_state_dict(result["optimizer"])
+        return f"{result['device']} at {GPU_TRAINER} ({result['seconds']:.1f} s on the GPU)"
 
     def average(self, names):
         """The mean of the kept versions; batch-norm statistics are averaged with the weights."""
