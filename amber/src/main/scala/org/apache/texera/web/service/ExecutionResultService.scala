@@ -525,17 +525,22 @@ class ExecutionResultService(
       val newInfo: Map[OperatorIdentity, OperatorResultMetadata] = {
         WorkflowExecutionsResource
           .getResultUrisByExecutionId(executionId)
-          .map(uri => {
-            val count = DocumentFactory.openDocument(uri)._1.getCount.toInt
-
+          .flatMap(uri => {
             val globalPortIdOption = VFSURIFactory.decodeURI(uri).globalPortId
 
-            // Retrieve the mode of the specified output port
-            val mode = physicalPlan
+            // Retrieve the mode of the specified output port. A port of an operator just added to
+            // the running execution can be registered before the plan here includes it; it is
+            // picked up on the next update.
+            physicalPlan
               .getPhysicalOpsOfLogicalOp(globalPortIdOption.get.opId.logicalOpId)
               .flatMap(_.outputPorts.get(globalPortIdOption.get.portId))
               .map(_._1.mode)
-              .head
+              .headOption
+              .map(mode => (uri, globalPortIdOption, mode))
+          })
+          .map({
+            case (uri, globalPortIdOption, mode) =>
+            val count = DocumentFactory.openDocument(uri)._1.getCount.toInt
 
             val changeDetector =
               if (mode == OutputMode.SET_SNAPSHOT) {

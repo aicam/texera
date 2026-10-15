@@ -76,9 +76,7 @@ import org.apache.texera.amber.operator.source.apis.reddit.RedditSearchSourceOpD
 import org.apache.texera.amber.operator.activelearning.{
   ReviewAndCorrectOpDesc,
   SuggestCasesOpDesc,
-  TrainSegmenterOpDesc,
-  AverageWeightsOpDesc,
-  LearningCurveOpDesc
+  TrainSegmenterOpDesc
 }
 import org.apache.texera.amber.operator.source.apis.twitter.v2.{
   TwitterFullArchiveSearchSourceOpDesc,
@@ -248,8 +246,6 @@ trait StateTransferFunc
     new Type(value = classOf[CSVOldScanSourceOpDesc], name = "CSVOldFileScan"),
     new Type(value = classOf[RedditSearchSourceOpDesc], name = "RedditSearch"),
     new Type(value = classOf[TrainSegmenterOpDesc], name = "TrainSegmenter"),
-    new Type(value = classOf[AverageWeightsOpDesc], name = "AverageWeights"),
-    new Type(value = classOf[LearningCurveOpDesc], name = "LearningCurve"),
     new Type(value = classOf[SuggestCasesOpDesc], name = "SuggestCases"),
     new Type(value = classOf[ReviewAndCorrectOpDesc], name = "ReviewAndCorrect"),
     new Type(value = classOf[PythonLambdaFunctionOpDesc], name = "PythonLambdaFunction"),

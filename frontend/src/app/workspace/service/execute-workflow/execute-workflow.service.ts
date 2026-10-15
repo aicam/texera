@@ -142,6 +142,15 @@ export class ExecuteWorkflowService {
           this.anchorDuration(event.duration, event.isRunning);
           break;
         default:
+          // An operator that reports statistics is part of the run, also when this page attached
+          // to a run it did not start (a reload, or a co-editor's run).
+          if (event.type === "OperatorStatisticsUpdateEvent") {
+            const added = Object.keys(event.operatorStatistics).filter(id => !this.runOperatorIds.has(id));
+            if (added.length > 0) {
+              added.forEach(id => this.runOperatorIds.add(id));
+              this.runOperatorsChanged.next();
+            }
+          }
           // workflow status related event
           this.handleReconfigurationEvent(event);
           const newState = this.handleExecutionEvent(event);
@@ -580,6 +589,10 @@ export class ExecuteWorkflowService {
         return;
       case ExecutionState.Paused:
       case ExecutionState.Running:
+        // A page that attached to a run it did not start takes the setting from the workflow.
+        if (this.currentState.state === ExecutionState.Uninitialized) {
+          this.liveEditingRun ||= this.workflowActionService.getWorkflowSettings().liveEditing ?? false;
+        }
         // A run with live editing on takes new operators while it goes.
         if (this.liveEditingRun) {
           this.workflowActionService.enableWorkflowModification();

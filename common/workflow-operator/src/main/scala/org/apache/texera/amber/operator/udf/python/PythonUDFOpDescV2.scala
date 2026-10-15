@@ -25,6 +25,7 @@ import com.kjetland.jackson.jsonSchema.annotations.JsonSchemaTitle
 import org.apache.texera.amber.core.executor.OpExecWithCode
 import org.apache.texera.amber.core.tuple.{Attribute, Schema}
 import org.apache.texera.amber.core.virtualidentity.{ExecutionIdentity, WorkflowIdentity}
+import org.apache.texera.amber.core.workflow.OutputPort.OutputMode
 import org.apache.texera.amber.core.workflow._
 import org.apache.texera.amber.operator.metadata.{OperatorGroupConstants, OperatorInfo}
 import org.apache.texera.amber.operator.{LogicalOp, PortDescription, StateTransferFunc}
@@ -187,12 +188,19 @@ class PythonUDFOpDescV2 extends LogicalOp with PythonUdfUiParameterSupport {
     } else {
       List(InputPort())
     }
+    // A UDF whose only output column is `html-content` draws a chart: each row it yields
+    // replaces the shown one, so the chart updates while the workflow runs.
+    val mode =
+      if (outputColumns != null && outputColumns.map(_.getName) == List("html-content"))
+        OutputMode.SINGLE_SNAPSHOT
+      else OutputMode.SET_SNAPSHOT
     val outputPortInfo = if (outputPorts != null) {
       outputPorts.zipWithIndex.map {
-        case (portDesc, idx) => OutputPort(PortIdentity(idx), displayName = portDesc.displayName)
+        case (portDesc, idx) =>
+          OutputPort(PortIdentity(idx), displayName = portDesc.displayName, mode = mode)
       }
     } else {
-      List(OutputPort())
+      List(OutputPort(mode = mode))
     }
 
     OperatorInfo(

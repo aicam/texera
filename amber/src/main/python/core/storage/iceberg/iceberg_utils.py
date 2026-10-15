@@ -36,6 +36,18 @@ import core.models
 from core.models import ArrowTableTupleProvider, Tuple
 from core.models.schema.attribute_type import AttributeType, TO_ARROW_MAPPING
 
+try:
+    from s3fs import S3FileSystem
+
+    # pyiceberg builds every table's S3 filesystem with the same arguments, and fsspec
+    # caches filesystems by their arguments, so all tables of a process share one S3
+    # client. With a REST catalog that signs requests per table, that client signs with
+    # whichever table was loaded last, and reading one table while another is written
+    # (a branch following a running operator) is refused. One client per table instead.
+    S3FileSystem.cachable = False
+except ImportError:  # no S3-backed catalog in this deployment
+    pass
+
 # Suffix used to encode LARGE_BINARY fields in Iceberg (must match Scala IcebergUtil)
 LARGE_BINARY_FIELD_SUFFIX = "__texera_large_binary_ptr"
 
