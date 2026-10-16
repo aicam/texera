@@ -504,7 +504,7 @@ export class WorkflowEditorComponent implements OnInit, AfterViewInit, OnDestroy
       const [sessions, states] = latest;
       const graph = this.workflowActionService.getTexeraGraph();
       const operators = graph.getAllOperators();
-      const loops: { key: string; from: string; to: string; text: string; live: boolean }[] = [];
+      const loops: { key: string; from: string; to: string[]; text: string; live: boolean }[] = [];
       operators
         .filter(op => op.operatorType === REVIEW_OPERATOR_TYPE)
         .forEach(op => {
@@ -521,22 +521,33 @@ export class WorkflowEditorComponent implements OnInit, AfterViewInit, OnDestroy
           const next = graph.getAllLinks().filter(link => link.source.operatorID === op.operatorID);
           const from = next.length === 1 ? next[0].target.operatorID : op.operatorID;
           const labels = op.operatorProperties["labelsDataset"];
-          operators
+          // Every model that learns from these labels: trainers on the same labels dataset, and
+          // operators the corrected labels feed directly (such as a second trainer).
+          const trainers = operators
             .filter(
               train =>
                 train.operatorType === TRAIN_OPERATOR_TYPE && train.operatorProperties["labelsDataset"] === labels
             )
-            .forEach(train =>
-              loops.push({
-                key: `${op.operatorID}->${train.operatorID}`,
-                from,
-                to: train.operatorID,
-                text:
-                  `corrected labels \u2192 next epoch \u00b7 ${labels}` +
-                  (session ? ` \u00b7 ${session.labeled} labeled` : ""),
-                live: isRunning || (session?.open ?? 0) > 0,
-              })
-            );
+            .map(train => train.operatorID);
+          const fed =
+            from === op.operatorID
+              ? []
+              : graph
+                  .getAllLinks()
+                  .filter(link => link.source.operatorID === from)
+                  .map(link => link.target.operatorID);
+          const to = [...new Set([...trainers, ...fed])];
+          if (to.length > 0) {
+            loops.push({
+              key: op.operatorID,
+              from,
+              to,
+              text:
+                `corrected labels \u2192 next epoch \u00b7 ${labels}` +
+                (session ? ` \u00b7 ${session.labeled} labeled` : ""),
+              live: isRunning || (session?.open ?? 0) > 0,
+            });
+          }
         });
       this.jointUIService.setLabelingFeedbackLoops(this.paper, loops);
     };
