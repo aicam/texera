@@ -25,6 +25,7 @@ import org.apache.texera.amber.engine.architecture.coordinator.CoordinatorAsyncR
 import org.apache.texera.amber.engine.architecture.rpc.controlcommands.{
   AsyncRPCContext,
   EmptyRequest,
+  EndLiveInputsRequest,
   PortCompletedRequest,
   QueryStatisticsRequest,
   StatisticsUpdateTarget
@@ -76,6 +77,20 @@ trait PortCompletedHandler {
             val isPortCompleted =
               if (msg.input) operatorExecution.isInputPortCompleted(msg.portId)
               else operatorExecution.isOutputPortCompleted(msg.portId)
+
+            if (isPortCompleted && !msg.input) {
+              // Readers that follow this port live, in operators added while it ran, read what
+              // is left and end their channels.
+              cp.workflowExecutionManager.liveInputs.producerCompleted(globalPortId).foreach {
+                case (uri, readers) =>
+                  readers.foreach(reader =>
+                    workerInterface.endLiveInputs(
+                      EndLiveInputsRequest(Seq(uri.toString)),
+                      mkContext(reader)
+                    )
+                  )
+              }
+            }
 
             if (isPortCompleted) {
               // Advance region executions in a later control round instead of here. Advancing

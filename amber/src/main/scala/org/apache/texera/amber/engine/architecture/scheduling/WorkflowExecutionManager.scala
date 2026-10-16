@@ -32,6 +32,7 @@ import org.apache.texera.amber.engine.architecture.coordinator.ExecutionStateUpd
 import org.apache.texera.amber.engine.architecture.coordinator.execution.WorkflowExecution
 import org.apache.texera.amber.engine.common.rpc.AsyncRPCClient
 
+import java.net.URI
 import java.util.concurrent.atomic.AtomicBoolean
 import scala.collection.mutable
 
@@ -42,6 +43,20 @@ class WorkflowExecutionManager(
 ) extends LazyLogging {
 
   var schedule: Schedule = Schedule(Map.empty)
+
+  // The regions of the schedule's current level.
+  private var scheduleLevel: Set[RegionIdentity] = Set.empty
+
+  /**
+    * Operators added while the execution runs have their own schedule, which starts right away
+    * and advances level by level independently of the main schedule and of other extensions.
+    */
+  private class Extension(val schedule: Schedule) extends Serializable {
+    var level: Set[RegionIdentity] = Set.empty
+  }
+  private val extensions: mutable.ListBuffer[Extension] = mutable.ListBuffer()
+
+  val liveInputs = new LiveInputTracker(workflowExecution)
 
   private val executedRegions: mutable.ListBuffer[Set[Region]] = mutable.ListBuffer()
 
@@ -71,7 +86,7 @@ class WorkflowExecutionManager(
     * `StartWorkflow`, and the first use is inside `coordinateRegionExecutors`.
     */
   private def loopStartPortUris: Map[String, String] =
-    schedule.levelSets.values.flatten.flatMap { region =>
+    allScheduledRegions.flatMap { region =>
       region.getOperators.filter(_.isLoopStart).map { op =>
         require(
           op.inputPorts.size == 1,
@@ -106,6 +121,23 @@ class WorkflowExecutionManager(
     * `CoordinatorInitiateAdvanceRegionExecutions` (see `PortCompletedHandler`) so the resulting
     * `EndWorker` cannot overtake the reply that request still owes.
     */
+  /**
+    * Every region of the main schedule and of the extensions, launched or not.
+    */
+  def allScheduledRegions: Seq[Region] =
+    (schedule +: extensions.map(_.schedule).toSeq).flatMap(_.levelSets.values.flatten)
+
+  /**
+    * Adds the schedule of operators added to the running execution, and the stored output ports
+    * (by URI) their inputs read. The next advance starts its first level.
+    */
+  def extend(addedSchedule: Schedule, readFrom: Map[URI, GlobalPortIdentity]): Unit = {
+    readFrom.foreach { case (uri, producer) => liveInputs.attach(uri, producer) }
+    extensions += new Extension(addedSchedule)
+  }
+
+  def hasPendingRegions: Boolean = schedule.hasNext || extensions.exists(_.schedule.hasNext)
+
   def advanceRegionExecutions(actorService: PekkoActorService): Future[Unit] = {
     val unfinishedRegionManagers =
       regionExecutionManagers.values.filter(!_.isCompleted).toSeq
@@ -135,21 +167,34 @@ class WorkflowExecutionManager(
         .flatMap(_ => advanceRegionExecutions(actorService))
     }
 
-    if (regionExecutionManagers.values.exists(!_.isCompleted)) {
-      // Some regions are still not completed yet. Cannot start the new regions.
-      return Future.Unit
-    }
+    def levelDone(level: Set[RegionIdentity]): Boolean =
+      level.forall(id => regionExecutionManagers.get(id).forall(_.isCompleted))
 
-    // All existing regions are completed. Start the next region (if any).
-    val nextRegions = if (!schedule.hasNext) Set.empty[Region] else schedule.next()
+    // A schedule starts its next level once every region of its current level completed.
+    val nextRegions = mutable.Set[Region]()
+    if (levelDone(scheduleLevel) && schedule.hasNext) {
+      val level = schedule.next()
+      scheduleLevel = level.map(_.id)
+      nextRegions ++= level
+    }
+    extensions.foreach { extension =>
+      if (levelDone(extension.level) && extension.schedule.hasNext) {
+        val level = extension.schedule.next()
+        extension.level = level.map(_.id)
+        nextRegions ++= level
+      }
+    }
     if (nextRegions.isEmpty) {
-      if (workflowExecution.isCompleted && completionNotified.compareAndSet(false, true)) {
+      if (
+        !hasUnfinishedRegionManagers && !hasPendingRegions && workflowExecution.isCompleted &&
+        completionNotified.compareAndSet(false, true)
+      ) {
         asyncRPCClient.sendToClient(ExecutionStateUpdate(workflowExecution.getState))
       }
       return Future.Unit
     }
 
-    executedRegions.append(nextRegions)
+    executedRegions.append(nextRegions.toSet)
     val loopUris = loopStartPortUris
     Future
       .collect(
@@ -169,7 +214,8 @@ class WorkflowExecutionManager(
               coordinatorConfig,
               actorService,
               actorRefService,
-              loopStartPortUris = loopUris
+              loopStartPortUris = loopUris,
+              liveInputs = Some(liveInputs)
             )
             regionExecutionManagers(region.id)
           })

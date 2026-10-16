@@ -46,7 +46,13 @@ trait AssignPortHandler {
       val inputPortURIStrs = msg.storageUris.toList
       val inputPortURIs = inputPortURIStrs.map(uriStr => URI.create(uriStr))
       val partitionings = msg.partitionings.toList
-      dp.inputManager.addPort(msg.portId, schema, inputPortURIs, partitionings)
+      dp.inputManager.addPort(
+        msg.portId,
+        schema,
+        inputPortURIs,
+        partitionings,
+        msg.liveStorageUris.map(URI.create).toSet
+      )
       inputPortURIStrs.foreach { uriStr =>
         val toActorId = ctx.receiver
         val fromActorId = getFromActorIdForInputPortStorage(uriStr, toActorId)

@@ -110,6 +110,7 @@ def sqlite_iceberg_catalog():
             table_state_namespace="operator-port-state",
             directory_path=_WAREHOUSE_DIR,
             commit_batch_size=4096,
+            commit_interval_ms=2000,
             s3_endpoint="unused",
             s3_region="unused",
             s3_auth_username="unused",

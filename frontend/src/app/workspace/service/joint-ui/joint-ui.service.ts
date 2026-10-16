@@ -511,7 +511,7 @@ export class JointUIService {
    */
   public setLabelingFeedbackLoops(
     jointPaper: joint.dia.Paper,
-    loops: { key: string; from: string; to: string; text: string; live: boolean }[]
+    loops: { key: string; from: string; to: string[]; text: string; live: boolean }[]
   ): void {
     const layer = jointPaper.getLayerNode("back");
     const keep = new Set(loops.map(loop => loop.key));
@@ -522,11 +522,18 @@ export class JointUIService {
     });
     for (const loop of loops) {
       const from = jointPaper.model.getCell(loop.from) as joint.dia.Element | undefined;
-      const to = jointPaper.model.getCell(loop.to) as joint.dia.Element | undefined;
-      if (!from || !to) {
+      const targets = loop.to
+        .map(id => jointPaper.model.getCell(id) as joint.dia.Element | undefined)
+        .filter((cell): cell is joint.dia.Element => cell !== undefined);
+      if (!from || targets.length === 0) {
         continue;
       }
-      const markup = JointUIService.feedbackLoopMarkup(from.getBBox(), to.getBBox(), loop.text, loop.live);
+      const markup = JointUIService.feedbackLoopMarkup(
+        from.getBBox(),
+        targets.map(target => target.getBBox()),
+        loop.text,
+        loop.live
+      );
       let group = layer.querySelector<SVGGElement>(`:scope > g.labeling-feedback[data-key="${loop.key}"]`);
       if (!group) {
         group = document.createElementNS("http://www.w3.org/2000/svg", "g");
@@ -543,41 +550,64 @@ export class JointUIService {
     }
   }
 
-  private static feedbackLoopMarkup(from: joint.g.Rect, to: joint.g.Rect, text: string, live: boolean): string {
-    // Start under the source's name label, run below both operators, end under the target's name.
+  /**
+   * One dashed line from the source down to a shared label box, and from the box a branch to each
+   * model that learns from the labels. Models in the top row of targets are entered from below
+   * (under their name), models further down from above.
+   */
+  private static feedbackLoopMarkup(from: joint.g.Rect, targets: joint.g.Rect[], text: string, live: boolean): string {
     const nameGap = 26;
-    const [sx, sy] = [from.x + from.width / 2, from.y + from.height + nameGap];
-    const [tx, ty] = [to.x + to.width / 2, to.y + to.height + nameGap];
-    const low = Math.max(sy, ty) + 56;
-    const r = Math.min(16, Math.abs(sx - tx) / 2);
-    const dir = tx < sx ? -1 : 1;
-    const path =
-      `M ${sx} ${sy} V ${low - r} Q ${sx} ${low} ${sx + dir * r} ${low} ` +
-      `H ${tx - dir * r} Q ${tx} ${low} ${tx} ${low - r} V ${ty + 4}`;
     const color = "#722ed1";
+    const [sx, sy] = [from.x + from.width / 2, from.y + from.height + nameGap];
+    const topRow = Math.min(...targets.map(t => t.y)) + 100;
+    const upper = targets.filter(t => t.y < topRow);
+    const bus = Math.max(sy, ...upper.map(t => t.y + t.height + nameGap)) + 40;
+    const ends = targets.map(t => {
+      const tx = t.x + t.width / 2;
+      return t.y < topRow ? { tx, ty: t.y + t.height + nameGap, up: true } : { tx, ty: t.y - 6, up: false };
+    });
+    const xs = [sx, ...ends.map(e => e.tx)];
+    const boxX = (Math.min(...xs) + Math.max(...xs)) / 2;
     const width = text.length * 6.2 + 24;
-    const mid = (sx + tx) / 2;
+    // Source to the box, then box to each target.
+    const trunk = `M ${sx} ${sy} V ${bus} H ${boxX}`;
+    const branches = ends.map(e => `M ${boxX} ${bus} H ${e.tx} V ${e.up ? e.ty + 4 : e.ty - 2}`);
+    const arrows = ends.map(e =>
+      e.up
+        ? `M ${e.tx - 6} ${e.ty + 13} L ${e.tx} ${e.ty + 3} L ${e.tx + 6} ${e.ty + 13}`
+        : `M ${e.tx - 6} ${e.ty - 11} L ${e.tx} ${e.ty - 1} L ${e.tx + 6} ${e.ty - 11}`
+    );
+    const dashed = (d: string) =>
+      `<path d="${d}" fill="none" stroke="${color}" stroke-width="6" opacity="0.08"/>` +
+      `<path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-dasharray="7 6" opacity="0.85">` +
+      (live ? '<animate attributeName="stroke-dashoffset" from="26" to="0" dur="1s" repeatCount="indefinite"/>' : "") +
+      "</path>";
     const dots = live
-      ? [0, 1, 2]
-          .map(
-            i =>
-              `<circle r="3.5" fill="${color}"><animateMotion dur="3.6s" begin="${-i * 1.2}s" ` +
-              `repeatCount="indefinite" path="${path}"/></circle>`
+      ? branches
+          .flatMap(branch =>
+            [0, 1].map(
+              i =>
+                `<circle r="3.5" fill="${color}"><animateMotion dur="3.6s" begin="${-i * 1.8}s" ` +
+                `repeatCount="indefinite" path="${trunk} ${branch.replace(/^M [^ ]+ [^ ]+/, "")}"/></circle>`
+            )
           )
           .join("")
       : "";
     return (
-      `<path d="${path}" fill="none" stroke="${color}" stroke-width="6" opacity="0.08"/>` +
-      `<path d="${path}" fill="none" stroke="${color}" stroke-width="2" stroke-dasharray="7 6" opacity="0.85">` +
-      (live ? '<animate attributeName="stroke-dashoffset" from="26" to="0" dur="1s" repeatCount="indefinite"/>' : "") +
-      "</path>" +
-      `<path d="M ${tx - 6} ${ty + 13} L ${tx} ${ty + 3} L ${tx + 6} ${ty + 13}" fill="none" stroke="${color}" ` +
-      'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>' +
+      dashed(trunk) +
+      branches.map(dashed).join("") +
+      arrows
+        .map(
+          d =>
+            `<path d="${d}" fill="none" stroke="${color}" stroke-width="2.2" stroke-linecap="round" ` +
+            'stroke-linejoin="round"/>'
+        )
+        .join("") +
       dots +
-      `<rect x="${mid - width / 2}" y="${low - 11}" width="${width}" height="22" rx="11" fill="#fff" ` +
-      `stroke="${color}" stroke-width="1.2"/>` +
-      `<text x="${mid}" y="${low + 4}" text-anchor="middle" fill="${color}" font-family="sans-serif" ` +
-      `font-size="11" font-weight="600">${escape(text)}</text>`
+      `<rect x="${boxX - width / 2}" y="${bus - 13}" width="${width}" height="26" rx="13" fill="#fff" ` +
+      `stroke="${color}" stroke-width="1.4"/>` +
+      `<text x="${boxX}" y="${bus + 4}" text-anchor="middle" fill="${color}" font-family="sans-serif" ` +
+      `font-size="12" font-weight="600">${escape(text)}</text>`
     );
   }
 
@@ -693,6 +723,13 @@ export class JointUIService {
       return;
     }
     model.attr("rect.body/stroke", color);
+  }
+
+  /**
+   * Dashes the outline of an operator that is on the canvas but not yet part of the running workflow.
+   */
+  public setOperatorPendingInRun(jointPaper: joint.dia.Paper, operatorID: string, pending: boolean): void {
+    jointPaper.getModelById(operatorID)?.attr("rect.body/stroke-dasharray", pending ? "8 5" : "none");
   }
 
   public changeOperatorDisableStatus(jointPaper: joint.dia.Paper, operator: OperatorPredicate): void {

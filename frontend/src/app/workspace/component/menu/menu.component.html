@@ -461,6 +461,18 @@
           <span> {{ runButtonText }}</span>
         </button>
         <button
+          *ngIf="operatorsNotInRun.length > 0"
+          (click)="executeWorkflowService.addToRunningWorkflow()"
+          title="Start the operators you added inside the running workflow; they read the running operators' output as it is produced"
+          id="add-to-run-button"
+          nz-button
+          nzType="primary">
+          <i
+            nz-icon
+            nzType="plus-circle"></i>
+          <span> Add {{ operatorsNotInRun.length }} to run</span>
+        </button>
+        <button
           *ngIf="this.config.env.timetravelEnabled"
           (click)="handleCheckpoint()"
           title="take checkpoint"

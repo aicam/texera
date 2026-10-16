@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -52,6 +53,9 @@ def _build_reader(worker_actor_id, schema=None):
     )
     reader._stopped = False
     reader._finished = False
+    reader._producer_finished = threading.Event()
+    reader._producer_finished.set()
+    reader.poll_interval_seconds = 0.01
     reader.channel_id = ChannelIdentity(
         worker_actor_id, worker_actor_id, is_control=False
     )
@@ -99,6 +103,9 @@ class TestRunStateReadingBlock:
         instance.tuple_schema = Schema(raw_schema={"x": "INTEGER"})
         instance._stopped = False
         instance._finished = False
+        instance._producer_finished = threading.Event()
+        instance._producer_finished.set()
+        instance.poll_interval_seconds = 0.01
         instance.channel_id = ChannelIdentity(me, me, is_control=False)
         instance.queue = MagicMock()
         instance.partitioner = MagicMock()
@@ -155,6 +162,58 @@ class TestRunStateReadingBlock:
         assert [sf.payload.loop_counter for sf in state_frames] == [0, 1]
         assert [sf.payload.loop_start_id for sf in state_frames] == ["loop-a", "loop-b"]
         assert runnable._finished is True
+
+
+class TestLiveReading:
+    """A live reader follows a port whose producer still runs, until told it finished."""
+
+    def test_follows_new_rows_until_the_producer_finishes(self):
+        me = ActorVirtualIdentity(name="me")
+        reader = _build_reader(me)
+        reader._producer_finished.clear()
+        rows = [MagicMock(name=f"row{i}") for i in range(3)]
+        result_doc = MagicMock()
+        result_doc.get.return_value = iter([rows[0]])
+
+        def get_after(offset):
+            if offset == 1:
+                return iter([rows[1]])
+            # The producer finishes; the pass that follows still reads its last row.
+            reader.end_live()
+            return iter([rows[2]]) if offset == 2 else iter([])
+
+        result_doc.get_after.side_effect = get_after
+        state_doc = MagicMock()
+        state_doc.get.return_value = iter([])
+        with patch(DOCUMENT_FACTORY) as factory:
+            factory.open_document.side_effect = [
+                (result_doc, reader.tuple_schema),
+                (state_doc, None),
+            ]
+            reader.run()
+
+        assert [c.args[0] for c in result_doc.get_after.call_args_list] == [1, 2, 3]
+        assert all(row.cast_to_schema.called for row in rows)
+        last_flush = reader.partitioner.flush.call_args_list[-1]
+        assert last_flush.args[1].id.id == "EndChannel"
+        assert reader._finished is True
+
+    def test_a_finished_producer_is_read_once(self):
+        me = ActorVirtualIdentity(name="me")
+        reader = _build_reader(me)
+        result_doc = MagicMock()
+        result_doc.get.return_value = iter([])
+        state_doc = MagicMock()
+        state_doc.get.return_value = iter([])
+        with patch(DOCUMENT_FACTORY) as factory:
+            factory.open_document.side_effect = [
+                (result_doc, reader.tuple_schema),
+                (state_doc, None),
+            ]
+            reader.run()
+
+        result_doc.get_after.assert_not_called()
+        assert reader._finished is True
 
 
 class TestTupleToBatchWithFilter:

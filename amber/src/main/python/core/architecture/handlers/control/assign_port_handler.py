@@ -33,6 +33,7 @@ class AssignPortHandler(ControlHandler):
                 Schema(raw_schema=req.schema),
                 req.storage_uris,
                 req.partitionings,
+                set(req.live_storage_uris),
             )
             for uri in req.storage_uris:
                 to_actor_id = ActorVirtualIdentity(self.context.worker_id)

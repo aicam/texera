@@ -171,6 +171,17 @@
   </li>
 
   <li
+    *ngIf="canPublishOutput() && !hasHighlightedLinks()"
+    (click)="onClickPublishOutput()"
+    nz-menu-item>
+    <span
+      nz-icon
+      nzType="share-alt"
+      nzTheme="outline"></span>
+    Publish output
+  </li>
+
+  <li
     *ngIf="workflowResultExportService.hasResultToExportOnHighlightedOperators &&
            this.config.env.exportExecutionResultEnabled &&
            !hasHighlightedLinks()"

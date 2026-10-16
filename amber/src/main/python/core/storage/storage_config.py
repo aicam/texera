@@ -35,6 +35,7 @@ class StorageConfig:
     ICEBERG_TABLE_STATE_NAMESPACE = None
     ICEBERG_FILE_STORAGE_DIRECTORY_PATH = None
     ICEBERG_TABLE_COMMIT_BATCH_SIZE = None
+    ICEBERG_TABLE_COMMIT_INTERVAL_MS = None
 
     # S3 configs
     S3_ENDPOINT = None
@@ -58,6 +59,7 @@ class StorageConfig:
         table_state_namespace,
         directory_path,
         commit_batch_size,
+        commit_interval_ms,
         s3_endpoint,
         s3_region,
         s3_auth_username,
@@ -80,6 +82,7 @@ class StorageConfig:
         cls.ICEBERG_TABLE_STATE_NAMESPACE = table_state_namespace
         cls.ICEBERG_FILE_STORAGE_DIRECTORY_PATH = directory_path
         cls.ICEBERG_TABLE_COMMIT_BATCH_SIZE = int(commit_batch_size)
+        cls.ICEBERG_TABLE_COMMIT_INTERVAL_MS = int(commit_interval_ms)
 
         # S3 configs
         cls.S3_ENDPOINT = s3_endpoint

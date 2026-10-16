@@ -58,11 +58,20 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
 import scala.collection.mutable.ArrayBuffer
 
+/**
+  * Feeds one input port from a materialized port, as if it were an upstream worker.
+  *
+  * A `live` reader follows a port whose producer is still running: after reading what is
+  * there it keeps polling for new rows, and ends the channel only after `endLive()` says the
+  * producer finished and the rows committed before that have been read.
+  */
 class InputPortMaterializationReaderThread(
     uri: URI,
     inputMessageQueue: LinkedBlockingQueue[DPInputQueueElement],
     workerActorId: ActorVirtualIdentity,
-    partitioning: Partitioning
+    partitioning: Partitioning,
+    live: Boolean = false,
+    pollIntervalMs: Long = 500
 ) extends Thread {
 
   private val sequenceNum = new AtomicLong()
@@ -76,6 +85,14 @@ class InputPortMaterializationReaderThread(
   private val partitioner = toPartitioner(partitioning, workerActorId)
   private val batchSize = ApplicationConfig.defaultDataTransferBatchSize
   private val isFinished = new AtomicBoolean(false)
+  private val producerFinished = new AtomicBoolean(!live)
+
+  /**
+    * The producer of a live reader's storage finished; the reader drains the rest and ends.
+    */
+  def endLive(): Unit = producerFinished.set(true)
+
+  def storageUri: URI = uri
 
   /**
     * Whether the reader thread has completed.
@@ -122,21 +139,31 @@ class InputPortMaterializationReaderThread(
         .openDocument(VFSURIFactory.resultURI(uri))
         ._1
         .asInstanceOf[VirtualDocument[Tuple]]
-      val storageReadIterator = materialization.get()
-      // Produce tuples
-      while (storageReadIterator.hasNext) {
-        val tuple = storageReadIterator.next()
-        if (
-          partitioner
-            .getBucketIndex(tuple)
-            .toList
-            .exists(bucketIndex => partitioner.allReceivers(bucketIndex) == workerActorId)
-        ) {
-          buffer.append(tuple)
-          if (buffer.size >= batchSize) {
-            flush()
+      var read = 0
+      def produce(rows: Iterator[Tuple]): Unit =
+        rows.foreach { tuple =>
+          read += 1
+          if (
+            partitioner
+              .getBucketIndex(tuple)
+              .toList
+              .exists(bucketIndex => partitioner.allReceivers(bucketIndex) == workerActorId)
+          ) {
+            buffer.append(tuple)
+            if (buffer.size >= batchSize) {
+              flush()
+            }
           }
         }
+      produce(materialization.get())
+      // The flag is read before each pass, so the pass after it is set sees every row the
+      // producer committed before finishing.
+      var lastPass = producerFinished.get()
+      while (!lastPass) {
+        flush()
+        Thread.sleep(pollIntervalMs)
+        lastPass = producerFinished.get()
+        produce(materialization.getAfter(read))
       }
       // Flush any remaining tuples in the buffer.
       if (buffer.nonEmpty) flush()

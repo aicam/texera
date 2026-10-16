@@ -83,6 +83,7 @@ import org.apache.texera.amber.operator.source.apis.twitter.v2.{
   TwitterSearchSourceOpDesc
 }
 import org.apache.texera.amber.operator.source.dataset.FileListerSourceOpDesc
+import org.apache.texera.amber.operator.source.shared.SharedOutputSourceOpDesc
 import org.apache.texera.amber.operator.source.fetcher.URLFetcherOpDesc
 import org.apache.texera.amber.operator.source.scan.arrow.ArrowSourceOpDesc
 import org.apache.texera.amber.operator.source.scan.csv.CSVScanSourceOpDesc
@@ -175,6 +176,7 @@ trait StateTransferFunc
     new Type(value = classOf[SankeyDiagramOpDesc], name = "SankeyDiagram"),
     new Type(value = classOf[IcicleChartOpDesc], name = "IcicleChart"),
     new Type(value = classOf[FileListerSourceOpDesc], name = "FileLister"),
+    new Type(value = classOf[SharedOutputSourceOpDesc], name = "SharedOutput"),
     new Type(value = classOf[CSVScanSourceOpDesc], name = "CSVFileScan"),
     // disabled the ParallelCSVScanSourceOpDesc so that it does not confuse user. it can be re-enabled when doing experiments.
     // new Type(value = classOf[ParallelCSVScanSourceOpDesc], name = "ParallelCSVFileScan"),

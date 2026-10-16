@@ -37,7 +37,7 @@ import {
 } from "../../service/heatmap/heatmap-scoring";
 import { ExecutionState, OperatorState } from "../../types/execute-workflow.interface";
 import { LogicalPort, OperatorLink, OperatorPredicate } from "../../types/workflow-common.interface";
-import { auditTime, filter, map, takeUntil, withLatestFrom } from "rxjs/operators";
+import { auditTime, debounceTime, filter, map, takeUntil, withLatestFrom } from "rxjs/operators";
 import { UntilDestroy, untilDestroyed } from "@ngneat/until-destroy";
 import { UndoRedoService } from "../../service/undo-redo/undo-redo.service";
 import { WorkflowVersionService } from "../../../dashboard/service/user/workflow-version/workflow-version.service";
@@ -255,6 +255,7 @@ export class WorkflowEditorComponent implements OnInit, AfterViewInit, OnDestroy
     this.registerPortDisplayNameChangeHandler();
     this.handleOperatorStatusUpdate();
     this.handleLabelingSessions();
+    this.handleOperatorsPendingInRun();
     this.handleHeatmapOverlay();
     this.handleHeatmapHover();
     this.handleRegionEvents();
@@ -466,6 +467,33 @@ export class WorkflowEditorComponent implements OnInit, AfterViewInit, OnDestroy
    * its execution runs, and after that for as long as cases wait for review, even
    * once the workflow is stopped or edited into an invalid state.
    */
+  /**
+   * In a run with live editing on, an operator drawn on the canvas but not yet added to the run has
+   * a dashed outline until "Add to run" starts it.
+   */
+  private handleOperatorsPendingInRun(): void {
+    merge(
+      this.executeWorkflowService.getExecutionStateStream(),
+      this.executeWorkflowService.getRunOperatorsChangedStream(),
+      this.workflowActionService.getTexeraGraph().getOperatorAddStream()
+    )
+      // after the canvas has drawn an added operator
+      .pipe(debounceTime(0), untilDestroyed(this))
+      .subscribe(() => {
+        const live = this.executeWorkflowService.isLiveEditingRun();
+        this.workflowActionService
+          .getTexeraGraph()
+          .getAllOperators()
+          .forEach(op =>
+            this.jointUIService.setOperatorPendingInRun(
+              this.paper,
+              op.operatorID,
+              live && !this.executeWorkflowService.isInRun(op.operatorID)
+            )
+          );
+      });
+  }
+
   private handleLabelingSessions(): void {
     const running = new Set([OperatorState.Initializing, OperatorState.Ready, OperatorState.Running]);
     let latest: [Map<string, LabelingSession>, Record<string, OperatorState>] | undefined;
@@ -476,7 +504,7 @@ export class WorkflowEditorComponent implements OnInit, AfterViewInit, OnDestroy
       const [sessions, states] = latest;
       const graph = this.workflowActionService.getTexeraGraph();
       const operators = graph.getAllOperators();
-      const loops: { key: string; from: string; to: string; text: string; live: boolean }[] = [];
+      const loops: { key: string; from: string; to: string[]; text: string; live: boolean }[] = [];
       operators
         .filter(op => op.operatorType === REVIEW_OPERATOR_TYPE)
         .forEach(op => {
@@ -493,22 +521,33 @@ export class WorkflowEditorComponent implements OnInit, AfterViewInit, OnDestroy
           const next = graph.getAllLinks().filter(link => link.source.operatorID === op.operatorID);
           const from = next.length === 1 ? next[0].target.operatorID : op.operatorID;
           const labels = op.operatorProperties["labelsDataset"];
-          operators
+          // Every model that learns from these labels: trainers on the same labels dataset, and
+          // operators the corrected labels feed directly (such as a second trainer).
+          const trainers = operators
             .filter(
               train =>
                 train.operatorType === TRAIN_OPERATOR_TYPE && train.operatorProperties["labelsDataset"] === labels
             )
-            .forEach(train =>
-              loops.push({
-                key: `${op.operatorID}->${train.operatorID}`,
-                from,
-                to: train.operatorID,
-                text:
-                  `corrected labels \u2192 next epoch \u00b7 ${labels}` +
-                  (session ? ` \u00b7 ${session.labeled} labeled` : ""),
-                live: isRunning || (session?.open ?? 0) > 0,
-              })
-            );
+            .map(train => train.operatorID);
+          const fed =
+            from === op.operatorID
+              ? []
+              : graph
+                  .getAllLinks()
+                  .filter(link => link.source.operatorID === from)
+                  .map(link => link.target.operatorID);
+          const to = [...new Set([...trainers, ...fed])];
+          if (to.length > 0) {
+            loops.push({
+              key: op.operatorID,
+              from,
+              to,
+              text:
+                `corrected labels \u2192 next epoch \u00b7 ${labels}` +
+                (session ? ` \u00b7 ${session.labeled} labeled` : ""),
+              live: isRunning || (session?.open ?? 0) > 0,
+            });
+          }
         });
       this.jointUIService.setLabelingFeedbackLoops(this.paper, loops);
     };

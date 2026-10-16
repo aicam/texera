@@ -228,11 +228,32 @@
 		currentOperatorId !== undefined &&
 		(this.executeWorkflowService.getExecutionState().state ===
 			ExecutionState.Paused) &&
-		this.interactive"
+		this.interactive &&
+		!this.executeWorkflowService.isLiveEditingRun()"
   nz-button
   nz-tooltip="Confirm change and modify the operator runtime"
   nzTooltipPlacement="bottom">
   Confirm Change
+</button>
+
+<!-- With live editing on, the form of a running operator stays editable; its changes reach the
+     run when applied here, and the operator keeps the state it has built. -->
+<button
+  (click)="confirmModifyOperatorLogic()"
+  *ngIf="
+		currentOperatorId !== undefined &&
+		this.actsAsEditor &&
+		this.executeWorkflowService.isLiveEditingRun() &&
+		this.executeWorkflowService.isInRun(currentOperatorId)"
+  [disabled]="
+  currentOperatorSchema?.additionalMetadata?.supportReconfiguration !== true
+  || currentOperatorState === OperatorState.Completed
+  "
+  nz-button
+  nzType="primary"
+  nz-tooltip="Apply these settings to the running operator; it keeps what it has built so far"
+  nzTooltipPlacement="bottom">
+  Apply to run
 </button>
 
 <div class="operator-version">

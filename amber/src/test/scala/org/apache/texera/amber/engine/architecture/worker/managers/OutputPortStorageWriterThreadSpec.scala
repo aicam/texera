@@ -40,8 +40,10 @@ class OutputPortStorageWriterThreadSpec extends AnyFlatSpec {
   ) extends BufferedItemWriter[Tuple] {
     val bufferSize: Int = 1024
     var closeCalled = false
+    @volatile var flushes = 0
     def open(): Unit = ()
     def putOne(item: Tuple): Unit = onPutOne()
+    def flush(): Unit = flushes += 1
     def close(): Unit = {
       closeCalled = true
       onClose()
@@ -118,6 +120,20 @@ class OutputPortStorageWriterThreadSpec extends AnyFlatSpec {
       .get(manager)
       .asInstanceOf[mutable.HashMap[PortIdentity, OutputPortStorageWriterThread]]
       .put(portId, thread)
+  }
+
+  it should "flush a partly filled buffer once the commit interval passes" in {
+    val writer = new StubWriter()
+    val thread = new OutputPortStorageWriterThread(writer, commitIntervalMs = 50)
+    thread.start()
+    thread.queue.put(Left(null))
+    val deadline = System.currentTimeMillis() + 5000
+    while (writer.flushes == 0 && System.currentTimeMillis() < deadline) Thread.sleep(10)
+    assert(writer.flushes == 1)
+    Thread.sleep(150)
+    assert(writer.flushes == 1, "an idle writer with nothing new must not keep flushing")
+    thread.queue.put(Right(PortStorageWriterTerminateSignal))
+    thread.join()
   }
 
   "OutputManager.closeOutputStorageWriterIfNeeded" should

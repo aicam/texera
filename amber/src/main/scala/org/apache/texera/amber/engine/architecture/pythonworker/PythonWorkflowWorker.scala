@@ -107,6 +107,7 @@ object PythonWorkflowWorker {
       "icebergTableStateNamespace" -> StorageConfig.icebergTableStateNamespace,
       "icebergFileStorageDirectoryPath" -> StorageConfig.fileStorageDirectoryPath.toString,
       "icebergTableCommitBatchSize" -> StorageConfig.icebergTableCommitBatchSize.toString,
+      "icebergTableCommitIntervalMs" -> StorageConfig.icebergTableCommitIntervalMs.toString,
       "s3Endpoint" -> StorageConfig.s3Endpoint,
       "s3Region" -> StorageConfig.s3Region,
       "s3AuthUsername" -> StorageConfig.s3Username,

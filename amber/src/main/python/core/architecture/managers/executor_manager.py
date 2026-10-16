@@ -218,6 +218,7 @@ class ExecutorManager:
         )
         # overwrite the internal state
         self.executor.__dict__ = original_internal_state
+        self.executor.on_reconfigure()
         # TODO:
         #   it may be an interesting idea to preserve versions of code and versions
         #   of states whenever the operator logic is being updated.

@@ -85,7 +85,7 @@ class TestAssignPortHandler:
     def test_input_without_storage_adds_the_port_without_registering(self, handler):
         asyncio.run(handler.assign_port(_make_request()))
         handler.context.input_manager.add_input_port.assert_called_once_with(
-            PORT_ID, Schema(raw_schema=RAW_SCHEMA), [], []
+            PORT_ID, Schema(raw_schema=RAW_SCHEMA), [], [], set()
         )
         handler.context.input_manager.register_input.assert_not_called()
 
@@ -102,8 +102,16 @@ class TestAssignPortHandler:
         request = _make_request(storage_uris=uris, partitionings=partitionings)
         asyncio.run(handler.assign_port(request))
         handler.context.input_manager.add_input_port.assert_called_once_with(
-            PORT_ID, Schema(raw_schema=RAW_SCHEMA), uris, partitionings
+            PORT_ID, Schema(raw_schema=RAW_SCHEMA), uris, partitionings, set()
         )
+
+    def test_input_passes_the_live_uris(self, handler):
+        uris = ["vfs:///mat/a", "vfs:///mat/b"]
+        request = _make_request(storage_uris=uris, live_storage_uris=["vfs:///mat/b"])
+        asyncio.run(handler.assign_port(request))
+        assert handler.context.input_manager.add_input_port.call_args.args[4] == {
+            "vfs:///mat/b"
+        }
 
     def test_input_registers_one_channel_per_uri_in_uri_order(self, handler):
         uris = ["vfs:///mat/a", "vfs:///mat/b"]
@@ -140,7 +148,7 @@ class TestAssignPortHandler:
         request = _make_request(storage_uris=[""])
         asyncio.run(handler.assign_port(request))
         handler.context.input_manager.add_input_port.assert_called_once_with(
-            PORT_ID, Schema(raw_schema=RAW_SCHEMA), [""], []
+            PORT_ID, Schema(raw_schema=RAW_SCHEMA), [""], [], set()
         )
         handler.context.input_manager.register_input.assert_called_once_with(
             channel_id=_expected_channel(""), port_id=PORT_ID
@@ -153,7 +161,7 @@ class TestAssignPortHandler:
         request = AssignPortRequest(port_id=PORT_ID, input=True, schema=RAW_SCHEMA)
         asyncio.run(handler.assign_port(request))
         handler.context.input_manager.add_input_port.assert_called_once_with(
-            PORT_ID, Schema(raw_schema=RAW_SCHEMA), [], []
+            PORT_ID, Schema(raw_schema=RAW_SCHEMA), [], [], set()
         )
         handler.context.input_manager.register_input.assert_not_called()
 

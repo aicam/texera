@@ -24,6 +24,7 @@ import org.apache.texera.amber.core.virtualidentity.{ExecutionIdentity, Workflow
 import org.apache.texera.amber.core.workflow.WorkflowContext
 import org.apache.texera.amber.engine.architecture.coordinator.{CoordinatorConfig, Workflow}
 import org.apache.texera.amber.engine.architecture.rpc.controlcommands.EmptyRequest
+import org.apache.texera.amber.engine.architecture.rpc.controlreturns.WorkflowAggregatedState
 import org.apache.texera.amber.engine.architecture.rpc.controlreturns.WorkflowAggregatedState._
 import org.apache.texera.amber.engine.common.Utils
 import org.apache.texera.amber.engine.common.client.AmberClient
@@ -40,8 +41,16 @@ import org.apache.texera.web.storage.ExecutionStateStore.updateWorkflowState
 import org.apache.texera.web.{ComputingUnitMaster, SubscriptionManager, WebsocketInput}
 import org.apache.texera.common.compiler.{CompilationErrorHandling, WorkflowCompiler}
 
+import com.twitter.util.{Await, Duration}
+import org.apache.texera.amber.core.workflow.PhysicalPlan
+import org.apache.texera.amber.engine.architecture.coordinator.{PlanExtension, PlanExtensionStore}
+import org.apache.texera.amber.engine.architecture.rpc.controlcommands.ExtendWorkflowRequest
+import org.apache.texera.web.model.websocket.request.WorkflowExtendRequest
+import org.apache.texera.web.model.websocket.response.WorkflowExtendResponse
+
 import java.net.URI
 import scala.collection.mutable
+import scala.util.{Failure, Success, Try}
 
 object WorkflowExecutionService {
   def getLatestExecutionId(
@@ -172,6 +181,43 @@ class WorkflowExecutionService(
           }
         )
       )
+  }
+
+  /**
+    * Starts what an edited plan adds to this running execution. Running operators stay as they
+    * are, so their property edits go through `modifyOperatorLogic`; the added operators may read
+    * running operators' kept outputs, which they follow live until those operators finish.
+    */
+  def extendWorkflow(request: WorkflowExtendRequest): WorkflowExtendResponse = {
+    val state = executionStateStore.metadataStore.getState.state
+    if (workflow == null || client == null || !Set[WorkflowAggregatedState](READY, RUNNING, PAUSED).contains(state)) {
+      return WorkflowExtendResponse(List.empty, isValid = false, "The workflow is not running")
+    }
+    Try {
+      val compilationResult = new WorkflowCompiler(workflowContext)
+        .compile(request.logicalPlan, CompilationErrorHandling.Strict)
+      val edited = compilationResult.physicalPlan.get
+      val running = workflow.physicalPlan
+      val added = edited.operators.filterNot(op => running.operators.exists(_.id == op.id))
+      val extensionId = PlanExtensionStore.put(
+        PlanExtension(edited, compilationResult.outputPortsNeedingStorage)
+      )
+      Await.result(
+        client.coordinatorInterface.extendWorkflow(ExtendWorkflowRequest(extensionId), ()),
+        Duration.fromSeconds(60)
+      )
+      workflow = Workflow(
+        workflowContext,
+        compilationResult.logicalPlan,
+        PhysicalPlan(running.operators ++ added, running.links ++ (edited.links -- running.links))
+      )
+      added.map(_.id.logicalOpId.id).toList.distinct
+    } match {
+      case Success(addedIds) => WorkflowExtendResponse(addedIds, isValid = true, "")
+      case Failure(err) =>
+        logger.warn("Could not extend the running workflow", err)
+        WorkflowExtendResponse(List.empty, isValid = false, Option(err.getMessage).getOrElse(err.toString))
+    }
   }
 
   override def unsubscribeAll(): Unit = {

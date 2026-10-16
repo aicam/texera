@@ -24,6 +24,8 @@ import org.apache.texera.amber.core.tuple.Schema
 import org.apache.texera.amber.core.virtualidentity.{ExecutionIdentity, WorkflowIdentity}
 import org.apache.texera.amber.core.workflow.{PhysicalOp, PortIdentity, SchemaPropagationFunc}
 
+import scala.util.{Success, Try}
+
 trait PythonOperatorDescriptor extends LogicalOp {
   private def generatePythonCodeForRaisingException(ex: Throwable): String = {
     s"#EXCEPTION DURING CODE GENERATION: ${ex.getMessage}"
@@ -64,6 +66,18 @@ trait PythonOperatorDescriptor extends LogicalOp {
       .withParallelizable(parallelizable())
       .withPropagateSchema(SchemaPropagationFunc(inputSchemas => getOutputSchemas(inputSchemas)))
   }
+
+  /**
+    * The new code runs on the same workers, taking over the old code's state. Generated code
+    * that keeps settings in that state applies changed ones in `on_reconfigure`.
+    */
+  override def runtimeReconfiguration(
+      workflowId: WorkflowIdentity,
+      executionId: ExecutionIdentity,
+      oldLogicalOp: LogicalOp,
+      newLogicalOp: LogicalOp
+  ): Try[(PhysicalOp, Option[StateTransferFunc])] =
+    Success(newLogicalOp.getPhysicalOp(workflowId, executionId), None)
 
   def parallelizable(): Boolean = false
 

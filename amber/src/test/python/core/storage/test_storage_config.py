@@ -31,6 +31,7 @@ _INIT_KWARGS = dict(
     table_state_namespace="state_ns",
     directory_path="/data/iceberg",
     commit_batch_size="4096",
+    commit_interval_ms="2000",
     s3_endpoint="http://rustfs:9000",
     s3_region="us-west-2",
     s3_auth_username="s3_user",
@@ -84,6 +85,11 @@ class TestInitialize:
         assert fresh_config._initialized is False
         fresh_config.initialize(**_INIT_KWARGS)
         assert fresh_config._initialized is True
+
+    def test_coerces_commit_interval_to_int(self, fresh_config):
+        fresh_config.initialize(**_INIT_KWARGS)
+
+        assert fresh_config.ICEBERG_TABLE_COMMIT_INTERVAL_MS == 2000
 
     def test_coerces_commit_batch_size_to_int(self, fresh_config):
         # commit_batch_size arrives as a string from the Java side and must be

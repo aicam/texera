@@ -31,7 +31,13 @@ import org.apache.texera.amber.core.virtualidentity.{
   PhysicalOpIdentity,
   WorkflowIdentity
 }
-import org.apache.texera.amber.core.workflow.{InputPort, PhysicalOp, PortIdentity}
+import org.apache.texera.amber.core.workflow.{
+  GlobalPortIdentity,
+  InputPort,
+  OutputPort,
+  PhysicalOp,
+  PortIdentity
+}
 import org.apache.texera.amber.engine.architecture.coordinator.CoordinatorConfig
 import org.apache.texera.amber.engine.architecture.coordinator.execution.WorkflowExecution
 import org.apache.texera.amber.engine.architecture.rpc.controlreturns.{
@@ -160,6 +166,46 @@ class WorkflowExecutionManagerSpec
     assert(!coordinator.actorRefService.hasActorRef(firstWorkerId))
     assert(rpcProbe.initializedWorkers.contains(secondWorkerId))
     assert(rpcProbe.startedWorkers.contains(secondWorkerId))
+  }
+
+  it should "start the regions added to a running execution while its regions still run" in {
+    // Its output port never completes, so the region keeps running.
+    val runningOp = createSourceOp("running-op").withOutputPorts(List(OutputPort()))
+    val runningWorkerId = createWorkerId(runningOp)
+    val runningRegion = createSingleWorkerRegion(1, runningOp, runningWorkerId)
+      .copy(ports = Set(GlobalPortIdentity(runningOp.id, PortIdentity())))
+
+    val addedOp = createSourceOp("added-op")
+    val addedWorkerId = createWorkerId(addedOp)
+    val addedRegion = createSingleWorkerRegion(2, addedOp, addedWorkerId)
+
+    val workflowExecution = WorkflowExecution()
+    seedReusableWorkerExecution(workflowExecution, seedRegionId = 101, runningOp, runningWorkerId)
+    seedReusableWorkerExecution(workflowExecution, seedRegionId = 102, addedOp, addedWorkerId)
+    val rpcProbe = new CoordinatorRpcProbe(endWorkerResponse = _ => Some(EmptyReturn()))
+    val coordinator = createCoordinatorHarness()
+    registerLiveWorker(coordinator.actorRefService, runningWorkerId)
+    registerLiveWorker(coordinator.actorRefService, addedWorkerId)
+
+    val workflowManager = new WorkflowExecutionManager(
+      workflowExecution,
+      CoordinatorConfig(None, None, None, None),
+      rpcProbe.asyncRPCClient
+    )
+    workflowManager.schedule = Schedule(Map(0 -> Set(runningRegion)))
+    workflowManager.setupActorRefService(coordinator.actorRefService)
+    await(workflowManager.advanceRegionExecutions(coordinator.actorService))
+    assert(rpcProbe.startedWorkers == Seq(runningWorkerId))
+
+    workflowManager.extend(Schedule(Map(0 -> Set(addedRegion))), Map.empty)
+    assert(workflowManager.hasPendingRegions)
+    assert(workflowManager.allScheduledRegions.map(_.id).toSet == Set(runningRegion.id, addedRegion.id))
+    await(workflowManager.advanceRegionExecutions(coordinator.actorService))
+
+    // The running region has not completed, yet the added one started.
+    assert(rpcProbe.startedWorkers == Seq(runningWorkerId, addedWorkerId))
+    assert(rpcProbe.endWorkerCalls.isEmpty)
+    assert(!workflowManager.hasPendingRegions)
   }
 
   // Same failure as a Python UDF whose code is missing `from pytexera import *`.

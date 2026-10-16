@@ -59,6 +59,7 @@ import org.apache.texera.amber.engine.common.virtualidentity.util.COORDINATOR
 import org.apache.texera.web.SessionState
 import org.apache.texera.web.model.websocket.event.RegionStateEvent
 
+import java.net.URI
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import scala.concurrent.duration.{Duration => ScalaDuration}
@@ -119,7 +120,9 @@ class RegionExecutionManager(
     // InitializeExecutorRequest. See WorkflowExecutionManager.loopStartPortUris.
     loopStartPortUris: Map[String, String] = Map.empty,
     // Mounts the repositories a region's operators name; a parameter so a test can observe it.
-    ensureMounted: Set[String] => Unit = RepositoryMountManager.ensureAllMounted
+    ensureMounted: Set[String] => Unit = RepositoryMountManager.ensureAllMounted,
+    // Decides which materialized inputs are read live, for operators added to a running execution.
+    liveInputs: Option[LiveInputTracker] = None
 ) extends AmberLogging {
 
   initRegionExecution()
@@ -571,6 +574,12 @@ class RegionExecutionManager(
           case (globalPortId, (storageUris, partitionings, schema)) =>
             resourceConfig.operatorConfigs(globalPortId.opId).workerConfigs.map(_.workerId).map {
               workerId =>
+                val liveStorageUris =
+                  if (!globalPortId.input) Seq.empty
+                  else
+                    liveInputs.toSeq.flatMap(tracker =>
+                      storageUris.filter(uri => tracker.assignReader(URI.create(uri), workerId))
+                    )
                 attributeFailureTo(workerId)(
                   asyncRPCClient.workerInterface.assignPort(
                     AssignPortRequest(
@@ -578,7 +587,8 @@ class RegionExecutionManager(
                       globalPortId.input,
                       schema.toRawSchema,
                       storageUris,
-                      partitionings
+                      partitionings,
+                      liveStorageUris
                     ),
                     asyncRPCClient.mkContext(workerId)
                   )

@@ -63,7 +63,7 @@ trait WorkerExecutionCompletedHandler {
         // if entire workflow is completed, clean up
         val isWorkflowTerminal =
           cp.workflowExecution.isCompleted &&
-            !cp.workflowScheduler.hasPendingRegions &&
+            !cp.workflowExecutionManager.hasPendingRegions &&
             !cp.workflowExecutionManager.hasUnfinishedRegionManagers
         if (isWorkflowTerminal) {
           // after query result come back: send completed event, cleanup ,and kill workflow

@@ -32,6 +32,7 @@ import org.apache.texera.dao.jooq.generated.enums.PrivilegeEnum
 import org.apache.texera.dao.jooq.generated.tables.pojos.User
 import org.apache.texera.web.model.websocket.event.{WorkflowErrorEvent, WorkflowStateEvent}
 import org.apache.texera.web.model.websocket.request._
+import org.apache.texera.web.resource.dashboard.user.workflow.SharedOutputResource
 import org.apache.texera.web.model.websocket.response._
 import org.apache.texera.web.service.WorkflowService
 import org.apache.texera.web.{ServletAwareConfigurator, SessionState}
@@ -111,10 +112,22 @@ class WorkflowWebsocketResource extends LazyLogging {
               )
             sessionState.send(modifyLogicResponse)
           }
+        case extendRequest: WorkflowExtendRequest =>
+          if (sessionState.getUserComputingUnitAccess != PrivilegeEnum.WRITE) {
+            throw new IllegalStateException("User does not have write access to the computing unit")
+          }
+          val executionService = executionStateOpt.getOrElse(
+            throw new IllegalStateException("workflow execution is not initialized")
+          )
+          uidOpt.foreach(uid => SharedOutputResource.requireReadable(extendRequest.logicalPlan, uid))
+          sessionState.send(executionService.extendWorkflow(extendRequest))
         case workflowExecuteRequest: WorkflowExecuteRequest =>
           if (sessionState.getUserComputingUnitAccess != PrivilegeEnum.WRITE) {
             throw new IllegalStateException("User does not have write access to the computing unit")
           }
+          uidOpt.foreach(uid =>
+            SharedOutputResource.requireReadable(workflowExecuteRequest.logicalPlan, uid)
+          )
           workflowStateOpt match {
             case Some(workflow) =>
               sessionState.send(WorkflowStateEvent("Initializing"))

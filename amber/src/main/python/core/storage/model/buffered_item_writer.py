@@ -63,3 +63,11 @@ class BufferedItemWriter(ABC, Generic[T]):
         :param item: the data item to be written.
         """
         pass
+
+    @abstractmethod
+    def flush(self) -> None:
+        """
+        Write the buffered items to the underlying storage now, even if the
+        buffer is not full.
+        """
+        pass

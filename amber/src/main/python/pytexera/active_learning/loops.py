@@ -77,6 +77,16 @@ def _load_model(model_res, version: dict) -> UNet:
     return net
 
 
+def _trained_by(model_res, version: dict) -> int:
+    """
+    The trainer's version a model version stands for: itself, or for a model
+    derived from the trainer's versions (such as their average) the newest
+    version it was derived from. Staleness counts trainer versions either way.
+    """
+    meta = json.loads(model_res.read_file(version["name"], "meta.json"))
+    return meta.get("source_version_id", version["mvid"])
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -223,6 +233,15 @@ class Suggester:
             self.rounds = max([item["round"] for item in items] + [0])
             self.carried = [{**item, "queue_version": latest["name"]} for item in items]
 
+    def reconfigure(self, model_name: str, batch_size: int, refill_below: int, pool_sample: int, max_rounds: int, ranking: str) -> None:
+        """Applies settings changed while the run goes on; the pool and the open suggestions stay."""
+        if ranking not in ("uncertainty", "random"):
+            raise ValueError(f"Unknown ranking '{ranking}'; use 'uncertainty' or 'random'.")
+        if model_name != self.model_name:
+            self.model_name, self.model_res = model_name, None
+        self.batch_size, self.refill_below = batch_size, refill_below
+        self.pool_sample, self.max_rounds, self.ranking = pool_sample, max_rounds, ranking
+
     def add_to_pool(self, case: str) -> None:
         self.pool.append(case)
 
@@ -261,6 +280,7 @@ class Suggester:
             return
         candidates = self.rng.sample(candidates, min(self.pool_sample, len(candidates)))
         net = _load_model(self.model_res, version)
+        trained_by = _trained_by(self.model_res, version)
         probs = None
         for probs in _predict(net, [self.scans[c] for c in candidates]):
             if probs is None:
@@ -282,7 +302,7 @@ class Suggester:
                     "uncertainty": round(float(entropy[index]), 4),
                     "round": self.rounds,
                     "suggested_by": version["name"],
-                    "suggested_by_id": version["mvid"],
+                    "suggested_by_id": trained_by,
                 }
             )
         self.pending.update({item["case"]: item for item in new_items})

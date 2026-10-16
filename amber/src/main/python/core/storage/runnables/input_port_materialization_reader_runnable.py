@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import threading
 import typing
 from loguru import logger
 from pyarrow import Table
@@ -78,6 +79,8 @@ class InputPortMaterializationReaderRunnable(Runnable, Stoppable):
         queue: InternalQueue,
         worker_actor_id: ActorVirtualIdentity,
         partitioning: Partitioning,
+        live: bool = False,
+        poll_interval_seconds: float = 0.5,
     ):
         """
         Args:
@@ -85,8 +88,16 @@ class InputPortMaterializationReaderRunnable(Runnable, Stoppable):
             queue: An instance of IQueue where messages are enqueued.
             worker_actor_id (ActorVirtualIdentity): The target worker actor's identity.
             partitioning: The partitioning information for this virtual reader worker
+            live: The producer is still running. After reading what is there, the
+                reader keeps polling for new rows, and ends the channel only after
+                `end_live()` says the producer finished and the rows committed
+                before that have been read.
         """
         self.uri = uri
+        self.poll_interval_seconds = poll_interval_seconds
+        self._producer_finished = threading.Event()
+        if not live:
+            self._producer_finished.set()
         self.queue = queue
         self.worker_actor_id = worker_actor_id
         from_actor_id = get_from_actor_id_for_input_port_storage(
@@ -115,6 +126,10 @@ class InputPortMaterializationReaderRunnable(Runnable, Stoppable):
             if partitioner != OneToOnePartitioner
             else partitioner(the_partitioning, self.worker_actor_id)
         )
+
+    def end_live(self) -> None:
+        """The producer finished; read what is left and end the channel."""
+        self._producer_finished.set()
 
     def finished(self) -> bool:
         """
@@ -167,20 +182,40 @@ class InputPortMaterializationReaderRunnable(Runnable, Stoppable):
                     )
                 )
 
-            storage_iterator = self.materialization.get()
-            # Iterate and process tuples.
-            for tup in storage_iterator:
-                if self._stopped:
-                    break
-                # Each tuple is sent to the partitioner and converted to
-                # a batch-based iterator.
-                tup.cast_to_schema(self.tuple_schema)
-                for data_frame in self.tuple_to_batch_with_filter(tup):
-                    self.emit_payload(data_frame)
+            read = self._produce(self.materialization.get())
+            # The flag is read before each pass, so the pass after it is set sees
+            # every row the producer committed before finishing.
+            last_pass = self._producer_finished.is_set()
+            while not last_pass and not self._stopped:
+                self._flush_partial_batches()
+                self._producer_finished.wait(self.poll_interval_seconds)
+                last_pass = self._producer_finished.is_set()
+                read += self._produce(self.materialization.get_after(read))
             self.emit_ecm("EndChannel", EmbeddedControlMessageType.PORT_ALIGNMENT)
             self._finished = True
         except Exception as err:
             logger.exception(err)
+
+    def _produce(self, rows: typing.Iterator[Tuple]) -> int:
+        """Sends this worker its share of `rows`; returns how many rows were read."""
+        count = 0
+        for tup in rows:
+            if self._stopped:
+                break
+            count += 1
+            # Each tuple is sent to the partitioner and converted to
+            # a batch-based iterator.
+            tup.cast_to_schema(self.tuple_schema)
+            for data_frame in self.tuple_to_batch_with_filter(tup):
+                self.emit_payload(data_frame)
+        return count
+
+    def _flush_partial_batches(self) -> None:
+        """A live reader hands over a partly filled batch instead of holding it."""
+        for payload in self.partitioner.flush(self.worker_actor_id, None):
+            if isinstance(payload, list) and payload:
+                self.emit_payload(self.tuples_to_data_frame(payload))
+                payload.clear()
 
     def stop(self):
         """Sets the stop flag so the run loop may terminate."""

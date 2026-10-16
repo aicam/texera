@@ -71,6 +71,40 @@ def operator(metadata: dict, op_type: str, op_id: str, name: str, overrides: dic
     }
 
 
+def python_udf(op_id: str, name: str, code: str, inputs: list, output_columns: dict) -> dict:
+    """A Python UDF, saved disabled: it is switched on while the workflow runs."""
+    return {
+        "operatorID": op_id,
+        "operatorType": "PythonUDFV2",
+        "operatorVersion": "",
+        "operatorProperties": {
+            "code": code,
+            "workers": 1,
+            "retainInputColumns": False,
+            "defaultEnv": True,
+            "outputColumns": [
+                {"attributeName": column, "attributeType": kind} for column, kind in output_columns.items()
+            ],
+        },
+        "customDisplayName": name,
+        "inputPorts": [
+            {"portID": f"input-{i}", "displayName": label, "disallowMultiInputs": True, "isDynamicPort": True,
+             "dependencies": []}
+            for i, label in enumerate(inputs)
+        ],
+        "outputPorts": [{"portID": "output-0", "displayName": "", "isDynamicPort": True}],
+        "showAdvanced": False,
+        "isDisabled": True,
+    }
+
+
+def udf_code(file: str, **names: str) -> str:
+    code = open(os.path.join(os.path.dirname(__file__), "udfs", file)).read()
+    for key, value in names.items():
+        code = code.replace("{" + key + "}", value)
+    return code
+
+
 def link(source: str, target: str, port: int = 0) -> dict:
     return {
         "linkID": f"link-{source}-{target}",
@@ -120,6 +154,12 @@ def main() -> None:
     parser.add_argument("--truth", default="brain-mri-gt")
     parser.add_argument("--seed-labels", type=int, default=20)
     parser.add_argument("--simulated", action="store_true", help="label with the simulated annotator")
+    parser.add_argument(
+        "--live-editing",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="keep every output, so operators can be added to the workflow while it runs",
+    )
     args = parser.parse_args()
     labels, queue, model = f"{args.prefix}-masks", f"{args.prefix}-review-queue", f"{args.prefix}-unet"
 
@@ -138,7 +178,7 @@ def main() -> None:
             {"predicates": [{"attribute": "split", "condition": "=", "value": "train"}]},
         ),
         operator(
-            metadata, "TrainSegmenter", "train", "Train U-Net", {**shared, "truthDataset": args.truth}
+            metadata, "TrainSegmenter", "train", "U-Net (newest weights)", {**shared, "truthDataset": args.truth}
         ),
         operator(metadata, "SuggestCases", "suggest", "Suggest cases", {**shared, "queueDataset": queue}),
         operator(
@@ -161,16 +201,43 @@ def main() -> None:
                 ],
             },
         ),
+        # The weight-averaging branch, switched on while the workflow runs.
+        python_udf(
+            "averaging",
+            "U-Net (weight averaging)",
+            udf_code(
+                "train_weight_averaging.py", labels=labels, plain_model=model, averaged_model=f"{model}-avg"
+            ),
+            ["cohort", "corrected labels"],
+            {
+                "labeled_cases": "integer",
+                "newest_dice": "double",
+                "averaged_dice": "double",
+                "published_model_version": "string",
+                "time": "string",
+            },
+        ),
+        python_udf(
+            "compare",
+            "Compare models",
+            udf_code("compare_models.py"),
+            ["newest weights", "weight averaging"],
+            {"html-content": "string"},
+        ),
     ]
     content = {
         "operators": operators,
+        # Three lanes: labeling on top, the plain U-Net in the middle, weight averaging and
+        # the comparison at the bottom.
         "operatorPositions": {
-            "cohort": {"x": 80, "y": 240},
-            "pool": {"x": 340, "y": 120},
-            "train": {"x": 340, "y": 360},
-            "suggest": {"x": 600, "y": 240},
-            "review": {"x": 860, "y": 240},
-            "corrected": {"x": 1120, "y": 240},
+            "cohort": {"x": 80, "y": 330},
+            "pool": {"x": 340, "y": 140},
+            "suggest": {"x": 600, "y": 140},
+            "review": {"x": 860, "y": 140},
+            "corrected": {"x": 1120, "y": 140},
+            "train": {"x": 340, "y": 330},
+            "averaging": {"x": 600, "y": 520},
+            "compare": {"x": 1120, "y": 520},
         },
         "links": [
             link("cohort", "train"),
@@ -179,11 +246,19 @@ def main() -> None:
             link("train", "suggest", 1),
             link("suggest", "review"),
             link("review", "corrected"),
+            link("cohort", "averaging", 0),
+            link("corrected", "averaging", 1),
+            link("train", "compare", 0),
+            link("averaging", "compare", 1),
         ],
         "commentBoxes": [],
         # One tuple per batch: suggestions and labels must reach the next
         # operator as soon as they exist, not when 400 have piled up.
-        "settings": {"dataTransferBatchSize": 1, "executionMode": "PIPELINED"},
+        "settings": {
+            "dataTransferBatchSize": 1,
+            "executionMode": "PIPELINED",
+            "liveEditing": args.live_editing,
+        },
     }
     name = f"Brain MRI active labeling ({args.prefix})" + (" simulated" if args.simulated else "")
     created = requests.post(

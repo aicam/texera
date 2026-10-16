@@ -25,6 +25,7 @@ import { WorkflowResultService } from "src/app/workspace/service/workflow-result
 import { WorkflowResultExportService } from "src/app/workspace/service/workflow-result-export/workflow-result-export.service";
 import { NzModalService } from "ng-zorro-antd/modal";
 import { ResultExportationComponent } from "../../../result-exportation/result-exportation.component";
+import { PublishOutputComponent } from "../../../publish-output/publish-output.component";
 import { ValidationWorkflowService } from "src/app/workspace/service/validation/validation-workflow.service";
 import { GuiConfigService } from "../../../../../common/service/gui-config.service";
 import { NzMenuDirective, NzMenuItemComponent } from "ng-zorro-antd/menu";
@@ -167,6 +168,28 @@ export class ContextMenuComponent {
       nzData: {
         workflowName: this.workflowActionService.getWorkflowMetadata()?.name,
         sourceTriggered: "context-menu",
+      },
+      nzFooter: null,
+    });
+  }
+
+  /**
+   * Whether the one selected operator's output can be published: the workflow has to be saved.
+   */
+  public canPublishOutput(): boolean {
+    return this.hasExactlyOneOperatorSelected() && this.workflowActionService.getWorkflowMetadata()?.wid !== undefined;
+  }
+
+  public onClickPublishOutput(): void {
+    const operatorId = this.getSelectedOperatorID();
+    const operator = this.workflowActionService.getTexeraGraph().getOperator(operatorId);
+    this.modalService.create({
+      nzTitle: "Publish output",
+      nzContent: PublishOutputComponent,
+      nzData: {
+        wid: this.workflowActionService.getWorkflowMetadata()!.wid!,
+        operatorId,
+        operatorName: operator.customDisplayName ?? operator.operatorType,
       },
       nzFooter: null,
     });

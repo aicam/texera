@@ -26,6 +26,7 @@ import org.apache.texera.amber.engine.architecture.rpc.controlcommands.{
   UpdateExecutorRequest,
   WorkflowReconfigureRequest
 }
+import org.apache.texera.amber.engine.architecture.rpc.controlreturns.WorkflowAggregatedState.RUNNING
 import org.apache.texera.amber.engine.common.client.AmberClient
 import org.apache.texera.web.SubscriptionManager
 import org.apache.texera.web.model.websocket.event.TexeraWebSocketEvent
@@ -42,7 +43,8 @@ import scala.util.{Failure, Success}
 class ExecutionReconfigurationService(
     client: AmberClient,
     stateStore: ExecutionStateStore,
-    workflow: Workflow
+    // By name: operators added while the execution runs extend the workflow.
+    workflow: => Workflow
 ) extends SubscriptionManager {
 
   // monitors notification from the engine that a reconfiguration on a worker is completed
@@ -54,8 +56,8 @@ class ExecutionReconfigurationService(
 
   // handles reconfigure workflow logic from frontend
   // validate the modify logic request and notifies the frontend
-  // reconfigurations can only come when the workflow is paused,
-  // they are not actually performed until the workflow is resumed
+  // a reconfiguration made while the workflow is paused is performed when it resumes;
+  // one made while it runs is performed right away
   def modifyOperatorLogic(modifyLogicRequest: ModifyLogicRequest): TexeraWebSocketEvent = {
     val newOp = modifyLogicRequest.operator
     val opId = newOp.operatorIdentifier
@@ -73,6 +75,9 @@ class ExecutionReconfigurationService(
         stateStore.reconfigurationStore.updateState(old =>
           old.copy(unscheduledReconfigurations = old.unscheduledReconfigurations :+ op)
         )
+        if (stateStore.metadataStore.getState.state == RUNNING) {
+          performReconfigurationOnResume()
+        }
         ModifyLogicResponse(opId.id, isValid = true, "")
       }
     }

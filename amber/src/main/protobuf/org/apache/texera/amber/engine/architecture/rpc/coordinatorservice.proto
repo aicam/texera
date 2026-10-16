@@ -48,4 +48,5 @@ service CoordinatorService {
   rpc CoordinatorInitiateAdvanceRegionExecutions(EmptyRequest) returns (EmptyReturn);
   rpc RetryWorkflow(RetryWorkflowRequest) returns (EmptyReturn);
   rpc ReconfigureWorkflow(WorkflowReconfigureRequest) returns (EmptyReturn);
+  rpc ExtendWorkflow(ExtendWorkflowRequest) returns (EmptyReturn);
 }
