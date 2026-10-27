@@ -15,7 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
-{{- $objectStreamTimeout := dig "objectStreamTimeout" "0s" (.Values.gatewayConfig | default dict) }}
+{{- /* Ceiling for rules that stream whole objects. Envoy's 15s default route timeout cuts
+       them off after the 200 is sent, leaving the browser with a truncated file. */}}
+{{- $objectStreamTimeout := "24h" }}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
