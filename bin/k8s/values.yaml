@@ -605,6 +605,12 @@ gatewayConfig:
   # frontend is prepared to wait.
   llmRequestTimeout: 10m
 
+  # Ceiling for routes that stream whole objects: file-service (version zips, uploads) and
+  # the object store (presigned URLs). Envoy's default 15s route timeout cuts these off
+  # mid-transfer, and since the status line is already sent the browser saves a truncated
+  # file. "0s" disables the limit; Envoy's stream idle timeout still reaps stalled transfers.
+  objectStreamTimeout: "0s"
+
   # The hostname for the Gateway listener (HTTP/HTTPS).
   # e.g., "texera.example.com"
   hostname: ""
